@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+redis
+asyncpg
+sqlalchemy
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+websockets
+# For later AI integration
+httpx
+email-validator
+python-dotenv
+bcrypt==4.0.1

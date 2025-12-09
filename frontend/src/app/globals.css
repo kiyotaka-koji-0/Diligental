@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+:root {
+  /* Forced Dark Mode Palette - Black & Red Glass Theme */
+  --background: #030303;
+  /* Deepest Black */
+  --foreground: #ffffff;
+
+  /* Vibrant Red Primary */
+  --primary: #FF2A2A;
+  --primary-foreground: #ffffff;
+
+  --muted: #121212;
+  --muted-foreground: #a1a1aa;
+
+  --border: #27272a;
+  --input: #27272a;
+
+  /* Glassmorphism Variables */
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(10, 10, 10, 0.7);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --font-sans: var(--font-outfit);
+}
+
+body {
+  background: #000000;
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  /* Red/Black Abyss Gradient */
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.25) 0%, transparent 60%),
+    radial-gradient(circle at 100% 100%, rgba(153, 27, 27, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 0% 100%, rgba(69, 10, 10, 0.1) 0%, transparent 50%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Glass Utilities */
+.glass {
+  background: rgba(35, 35, 40, 0.65);
+  /* Lighter panel bg */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.glass-heavy {
+  background: rgba(15, 15, 20, 0.85);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes popOut {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+
+.animate-pop-out {
+  animation: popOut 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out forwards;
+}
