@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005";
 
 // This is a placeholder for a more robust API client (e.g., using ky, axios, or a custom fetch wrapper)
 // For the purpose of this edit, we'll assume 'api' is an instance of such a client
@@ -16,6 +17,43 @@ export interface Workspace {
     name: string;
     owner_id: string;
     invite_code?: string;
+}
+
+// Add these missing interfaces if they aren't imported elsewhere, or just keep them minimal as needed
+export interface User {
+    id: string;
+    email: string;
+    username: string;
+    avatar_url?: string;
+}
+
+export interface Channel {
+    id: string;
+    workspace_id: string;
+    name: string;
+    description?: string;
+}
+
+export interface Message {
+    id: string;
+    channel_id: string;
+    user_id: string;
+    content: string;
+    created_at: string;
+    user?: User;         // The backend explicitly sends 'user' object in schema
+    sender?: User;       // Fallback
+    sender_id?: string;  // Fallback
+    role?: string;       // Fallback
+    parent_id?: string;
+}
+
+export interface Notification {
+    id: string;
+    content: string;
+    type: string; // 'mention', 'reply', 'system'
+    is_read: boolean;
+    created_at: string;
+    related_id?: string;
 }
 
 async function baseApiFetch<T>(method: string, endpoint: string, data?: any, options: FetchOptions = {}): Promise<T> {
@@ -38,7 +76,10 @@ async function baseApiFetch<T>(method: string, endpoint: string, data?: any, opt
 
     if (data) {
         if (config.method === 'GET' || config.method === 'HEAD') {
-            const params = new URLSearchParams(data).toString();
+            const cleanData = Object.fromEntries(
+                Object.entries(data).filter(([_, v]) => v !== undefined && v !== null)
+            );
+            const params = new URLSearchParams(cleanData as any).toString();
             endpoint = `${endpoint}?${params}`;
         } else {
             if (bodySerializer) {
@@ -56,6 +97,17 @@ async function baseApiFetch<T>(method: string, endpoint: string, data?: any, opt
     }
 
     const response = await fetch(`${API_URL}${endpoint}`, config);
+
+    if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('token');
+            // Prevent infinite redirect loop if already on login
+            if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                window.location.href = '/login';
+            }
+        }
+        throw new Error("Session expired. Please login again.");
+    }
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: "An error occurred" }));
@@ -93,35 +145,46 @@ export const api = {
         }
     }),
     register: (data: any) => api.post('/auth/register', data),
-    getMe: () => api.get('/users/me'),
+    getMe: () => api.get<User>('/users/me'),
 
     // Workspaces
     createWorkspace: (name: string) => api.post<Workspace>('/workspaces/', { name }),
-
     getWorkspaceInvite: (workspaceId: string) => api.get<{ invite_code: string }>(`/workspaces/${workspaceId}/invite`),
     regenerateInviteCode: (workspaceId: string) => api.post<{ invite_code: string }>(`/workspaces/${workspaceId}/invite-code`),
 
     joinWorkspace: (inviteCode: string) => api.post<Workspace>('/workspaces/join', { invite_code: inviteCode }),
 
-    getWorkspaces: () => api.get('/workspaces/'),
-    getWorkspace: (id: string) => api.get(`/workspaces/${id}`),
+    getWorkspaces: () => api.get<Workspace[]>('/workspaces/'),
+    getWorkspace: (id: string) => api.get<Workspace>(`/workspaces/${id}`),
 
-    // Channels (Updated to be workspace-aware later if needed, but currently ID based)
     // Channels
-    getChannels: (workspaceId: string) => baseApiFetch('GET', '/channels/', { workspace_id: workspaceId }),
-    createChannel: (workspaceId: string, name: string, description?: string) => api.post('/channels/', { workspace_id: workspaceId, name, description }),
+    getChannels: (workspaceId: string) => baseApiFetch<Channel[]>('GET', '/channels/', { workspace_id: workspaceId }),
+    createChannel: (workspaceId: string, name: string, description?: string) => api.post<Channel>('/channels/', { workspace_id: workspaceId, name, description }),
     deleteChannel: (channelId: string) => api.delete(`/channels/${channelId}`),
-    updateChannel: (channelId: string, name: string) => baseApiFetch('PATCH', `/channels/${channelId}`, { name }),
+    updateChannel: (channelId: string, name: string) => baseApiFetch<Channel>('PATCH', `/channels/${channelId}`, { name }),
+    getChannel: (channelId: string) => api.get<Channel>(`/channels/${channelId}`),
 
     // Messages
-    getMessages: (channelId: string) => api.get(`/channels/${channelId}/messages`),
+    getMessages: (channelId: string, parentId?: string) => baseApiFetch<Message[]>('GET', `/channels/${channelId}/messages`, { parent_id: parentId }),
 
     // WebSocket
     getWebSocketUrl: (channelId: string) => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = 'localhost:8001'; // Hardcoded for now, should use env
+        // Dynamic host: Use current browser hostname to allow external access (Tailscale, LAN)
+        const host = typeof window !== 'undefined' ? `${window.location.hostname}:8005` : 'localhost:8005';
         const token = localStorage.getItem('token');
         return `${protocol}//${host}/ws/${channelId}/${token}`;
+    },
+
+    // Notifications
+    getNotifications: () => api.get<Notification[]>('/notifications/'),
+    markNotificationRead: (id: string) => api.post<Notification>(`/notifications/${id}/read`),
+
+    logout: () => {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
     }
 };
 

@@ -4,7 +4,7 @@ import os
 import redis.asyncio as redis
 from contextlib import asynccontextmanager
 from database import engine, Base, async_session_maker
-from routes import auth, users, channels, ws, workspaces
+from routes import auth, users, channels, ws, workspaces, notifications
 from crud import get_user_by_username, create_user
 from schemas import UserCreate
 
@@ -57,6 +57,7 @@ app.include_router(users.router)
 app.include_router(channels.router)
 app.include_router(ws.router)
 app.include_router(workspaces.router)
+app.include_router(notifications.router)
 
 @app.get("/")
 async def root():

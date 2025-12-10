@@ -6,6 +6,7 @@ class ConnectionManager:
     def __init__(self):
         # Map channel_id to list of active WebSockets
         self.active_connections: Dict[str, List[WebSocket]] = {}
+        self.user_connections: Dict[str, List[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, channel_id: str):
         await websocket.accept()
@@ -32,6 +33,28 @@ class ConnectionManager:
                 except Exception:
                     # Handle broken pipe or closed connection gracefully if needed
                     # ideally disconnect() is called on close
+                    pass
+    
+    async def connect_user(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        if user_id not in self.user_connections:
+            self.user_connections[user_id] = []
+        self.user_connections[user_id].append(websocket)
+
+    def disconnect_user(self, websocket: WebSocket, user_id: str):
+        if user_id in self.user_connections:
+            if websocket in self.user_connections[user_id]:
+                self.user_connections[user_id].remove(websocket)
+            if not self.user_connections[user_id]:
+                del self.user_connections[user_id]
+
+    async def send_personal_message(self, message: dict, user_id: str):
+        if user_id in self.user_connections:
+            message_str = json.dumps(message, default=str)
+            for connection in self.user_connections[user_id]:
+                try:
+                    await connection.send_text(message_str)
+                except Exception:
                     pass
 
 manager = ConnectionManager()

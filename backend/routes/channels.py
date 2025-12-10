@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 import uuid
 
 from database import get_db
@@ -68,13 +68,15 @@ async def create_message(
     if message.channel_id != channel_id:
         raise HTTPException(status_code=400, detail="Channel ID mismatch")
 
-    return await crud.create_message(db=db, message=message, user_id=current_user.id)
+    msg, _ = await crud.create_message(db=db, message=message, user_id=current_user.id)
+    return msg
 
 @router.get("/{channel_id}/messages", response_model=List[Message])
 async def read_messages(
     channel_id: uuid.UUID,
     skip: int = 0,
     limit: int = 50,
+    parent_id: Optional[uuid.UUID] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -88,7 +90,7 @@ async def read_messages(
     if not member:
         raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
-    return await crud.get_messages(db, channel_id=channel_id, skip=skip, limit=limit)
+    return await crud.get_messages(db, channel_id=channel_id, skip=skip, limit=limit, parent_id=parent_id)
 
 @router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel(
@@ -128,3 +130,19 @@ async def update_channel(
          raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
     return await crud.update_channel(db, channel_id, name=channel_update.name)
+@router.get("/{channel_id}", response_model=Channel)
+async def read_channel(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    channel = await crud.get_channel(db, channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+        
+    member = await crud.get_workspace_member(db, channel.workspace_id, current_user.id)
+    if not member:
+         raise HTTPException(status_code=403, detail="Not a member of this workspace")
+         
+    return channel
+

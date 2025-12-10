@@ -49,6 +49,7 @@ class Channel(ChannelBase):
 class MessageBase(BaseModel):
     content: str
     channel_id: uuid.UUID
+    parent_id: Optional[uuid.UUID] = None
 
 class MessageCreate(MessageBase):
     pass
@@ -101,6 +102,24 @@ class WorkspaceMemberOut(WorkspaceMemberBase):
     user_id: uuid.UUID
     joined_at: datetime
     user: Optional[UserOut] = None
+
+    class Config:
+        from_attributes = True
+
+# Notification Schemas
+class NotificationBase(BaseModel):
+    content: str
+    type: str # 'mention', 'reply', 'system'
+    related_id: Optional[uuid.UUID] = None
+
+class NotificationCreate(NotificationBase):
+    user_id: uuid.UUID # Recipient
+
+class Notification(NotificationBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    is_read: bool
+    created_at: datetime
 
     class Config:
         from_attributes = True

@@ -31,97 +31,103 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
-  --font-sans: var(--font-outfit);
+  --font-outfit: "Outfit", sans-serif;
+  --font-cal-sans: "Cal Sans", sans-serif;
 }
 
+/* Base Styles */
+html,
 body {
-  background: #000000;
+  /* CRITICAL FIX: Lock viewport to prevent window scrolling ("clings up" issue) */
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  /* Prevent overscroll bounce on Mac/iOS */
+  overscroll-behavior: none;
+  background: linear-gradient(-45deg, #050000, #2a0000, #000a2a, #000000);
+  background-size: 400% 400%;
+  animation: gradient-motion 15s ease infinite;
   color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-  /* Red/Black Abyss Gradient */
-  background-image:
-    radial-gradient(circle at 50% 0%, rgba(220, 38, 38, 0.25) 0%, transparent 60%),
-    radial-gradient(circle at 100% 100%, rgba(153, 27, 27, 0.15) 0%, transparent 50%),
-    radial-gradient(circle at 0% 100%, rgba(69, 10, 10, 0.1) 0%, transparent 50%);
-  background-attachment: fixed;
-  min-height: 100vh;
 }
 
-/* Glass Utilities */
-.glass {
-  background: rgba(35, 35, 40, 0.65);
-  /* Lighter panel bg */
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-}
-
-.glass-heavy {
-  background: rgba(15, 15, 20, 0.85);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
-}
-
-.glass-panel {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-}
-
-/* Animations */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes popOut {
+@keyframes gradient-motion {
   0% {
-    transform: scale(0.95);
-    opacity: 0;
+    background-position: 0% 50%;
   }
 
-  60% {
-    transform: scale(1.02);
-    opacity: 1;
+  50% {
+    background-position: 100% 50%;
   }
 
   100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Glow Effect Layer */
+body::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at center, rgba(255, 42, 42, 0.08) 0%, rgba(0, 40, 255, 0.05) 30%, transparent 70%);
+  animation: glow-pulse 10s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes glow-pulse {
+  0% {
     transform: scale(1);
+    opacity: 0.5;
+  }
+
+  100% {
+    transform: scale(1.1);
+    opacity: 0.8;
   }
 }
 
-@keyframes scaleIn {
-  from {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
+/* Ensure next root div also fills screen */
+#root,
+#__next,
+body>div:first-child {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.4s ease-out forwards;
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.animate-pop-out {
-  animation: popOut 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.animate-scale-in {
-  animation: scaleIn 0.2s ease-out forwards;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Hide scrollbar for clean UI where needed */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
 }

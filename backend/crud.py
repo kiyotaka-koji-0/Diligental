@@ -1,7 +1,8 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from models import User, Channel, Message
+from models import User, Channel, Message, Notification
 import models
+import re
 from schemas import UserCreate, ChannelCreate, MessageCreate
 import schemas
 from security import get_password_hash
@@ -72,12 +73,55 @@ async def create_message(db: AsyncSession, message: MessageCreate, user_id: uuid
     db_message = Message(
         content=message.content,
         channel_id=message.channel_id,
-        user_id=user_id
+        user_id=user_id,
+        parent_id=message.parent_id
     )
     db.add(db_message)
+    await db.flush() # Ensure ID is generated
+    
+    new_notifications = []
+
+    # Handle Notifications
+    # 1. Mentions
+    mentions = re.findall(r"@(\w+)", message.content)
+    # Deduplicate mentions
+    mentions = list(set(mentions))
+    
+    for username in mentions:
+        user = await get_user_by_username(db, username)
+        if user and user.id != user_id:
+            notif = models.Notification(
+                user_id=user.id,
+                content=f"You were mentioned by a user",
+                type="mention",
+                related_id=db_message.id
+            )
+            db.add(notif)
+            new_notifications.append(notif)
+            
+    # 2. Replies
+    if message.parent_id:
+        parent_msg = await db.get(Message, message.parent_id)
+        if parent_msg and parent_msg.user_id != user_id:
+            # Check if we already notified via mention to avoid double notify?
+            # For simplicity, create separate notification or check logic.
+            # Let's just create it.
+            notif = models.Notification(
+                user_id=parent_msg.user_id,
+                content="New reply to your message",
+                type="reply",
+                related_id=db_message.id
+            )
+            db.add(notif)
+            new_notifications.append(notif)
+
     await db.commit()
     await db.refresh(db_message)
-    return db_message
+    # Refresh notifications to get IDs
+    for n in new_notifications:
+        await db.refresh(n)
+        
+    return db_message, new_notifications
 
 # Workspace CRUD
 async def create_workspace(db: AsyncSession, workspace: schemas.WorkspaceCreate, user_id: uuid.UUID):
@@ -116,12 +160,16 @@ async def get_workspace_member(db: AsyncSession, workspace_id: uuid.UUID, user_i
 
 from sqlalchemy.orm import joinedload
 
-async def get_messages(db: AsyncSession, channel_id: uuid.UUID, skip: int = 0, limit: int = 50):
+async def get_messages(db: AsyncSession, channel_id: uuid.UUID, skip: int = 0, limit: int = 50, parent_id: uuid.UUID = None):
+    query = select(Message).options(joinedload(Message.user)).filter(Message.channel_id == channel_id)
+    
+    if parent_id:
+        query = query.filter(Message.parent_id == parent_id)
+    else:
+        query = query.filter(Message.parent_id == None)
+
     result = await db.execute(
-        select(Message)
-        .options(joinedload(Message.user))
-        .filter(Message.channel_id == channel_id)
-        .order_by(Message.created_at.asc())
+        query.order_by(Message.created_at.asc())
         .offset(skip)
         .limit(limit)
     )
@@ -147,3 +195,23 @@ async def update_channel(db: AsyncSession, channel_id: uuid.UUID, name: str):
         await db.commit()
         await db.refresh(db_channel)
     return db_channel
+    return db_channel
+
+# Notifications
+async def get_notifications(db: AsyncSession, user_id: uuid.UUID, skip: int = 0, limit: int = 50):
+    result = await db.execute(
+        select(Notification)
+        .filter(Notification.user_id == user_id)
+        .order_by(Notification.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+async def mark_notification_read(db: AsyncSession, notification_id: uuid.UUID, user_id: uuid.UUID):
+    notif = await db.get(Notification, notification_id)
+    if notif and notif.user_id == user_id:
+        notif.is_read = True
+        await db.commit()
+        await db.refresh(notif)
+    return notif

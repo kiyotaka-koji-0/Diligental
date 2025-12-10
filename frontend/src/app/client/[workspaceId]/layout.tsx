@@ -17,7 +17,8 @@ export default function WorkspaceLayout({
             <Sidebar currentWorkspaceId={workspaceId} />
 
             {/* Main Content Area */}
-            <main className="flex-1 flex overflow-hidden bg-[#313338]">
+            {/* Added flex-col to ensure vertical stacking of children (like ChannelPage) */}
+            <main className="flex-1 flex flex-col overflow-hidden bg-transparent relative">
                 {children}
             </main>
         </div>

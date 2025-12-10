@@ -1,246 +1,402 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
-import api from "@/lib/api";
+import { useState, useEffect, useRef, use } from "react";
+import { api, Message, Channel, User } from "@/lib/api";
+import { Send, Hash, Users, Monitor, Bot, MessageCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ThreadView } from "@/components/chat/thread-view";
 
-interface User {
-    username: string;
-    email: string;
-}
-
-interface Message {
-    id: string;
-    content: string;
-    created_at: string;
-    user_id: string;
-    user: User;
-}
-
-interface Channel {
-    id: string;
-    name: string;
-    workspace_id: string;
-}
-
-export default function ChannelPage() {
-    const params = useParams();
-    const router = useRouter();
-    const channelId = params.channelId as string;
-    const workspaceId = params.workspaceId as string;
-
+export default function ChannelPage({
+    params,
+}: {
+    params: Promise<{ workspaceId: string; channelId: string }>;
+}) {
+    const { workspaceId, channelId } = use(params);
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
-    const [isConnected, setIsConnected] = useState(false);
+    const [channel, setChannel] = useState<Channel | null>(null);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
+    const [isConnected, setIsConnected] = useState(false);
 
-    const bottomRef = useRef<HTMLDivElement>(null);
+    // Threading State
+    const [activeThread, setActiveThread] = useState<Message | null>(null);
+    const [threadMessages, setThreadMessages] = useState<Message[]>([]);
+
+    // Typing State
+    const [typingUsers, setTypingUsers] = useState<string[]>([]);
+    const lastTypedRef = useRef<number>(0);
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Aesthetics
+    const messageFontSize = "text-lg"; // Increased from text-[15px]
+    const glassBorder = "border-white/20"; // Brighter border
+
+    // Refs
+    const messagesEndRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
+    // Ref to access activeThread inside WebSocket callback without triggering re-connection
+    const activeThreadRef = useRef<Message | null>(null);
 
-    // Fetch initial messages, user info and channel info
+    // Sync ref
+    useEffect(() => {
+        activeThreadRef.current = activeThread;
+    }, [activeThread]);
+
+    // Initial Data Fetch
     useEffect(() => {
         const fetchData = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) return router.push("/login");
-
             try {
-                const user = await api.getMe() as User;
+                const user = await api.getMe();
                 setCurrentUser(user);
 
-                // Fetch Channel details to show name
-                // Ideally API should provide getChannel(id) or we find from list.
-                // Since we don't have getChannel(id) strictly defined in api.ts as fetching single,
-                // we can assume we might need to rely on side-channel or add it.
-                // Actually the sidebar fetches channels, but we are in a page.
-                // Let's implement a quick getChannel or just fetch all for workspace and find.
-                // For optimal perf, getChannel(id) should be added.
-                // But for now, let's just show ID or fetch all.
-                const channels = await api.getChannels(workspaceId) as Channel[];
-                const channel = channels.find(c => c.id === channelId);
-                if (channel) setCurrentChannel(channel);
+                const ch = await api.getChannel(channelId);
+                setChannel(ch);
 
-                const msgs = await api.getMessages(channelId) as Message[];
-                setMessages(msgs);
+                const hist = await api.getMessages(channelId);
+                // Ensure messages are sorted by date
+                const sorted = hist.sort((a: Message, b: Message) =>
+                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                setMessages(sorted);
             } catch (err) {
-                console.error("Failed to load channel data", err);
+                console.error("Error fetching data:", err);
             }
         };
+        fetchData();
+    }, [workspaceId, channelId]);
 
-        if (channelId && workspaceId) {
-            fetchData();
+    // Load Thread Messages when activeThread changes
+    useEffect(() => {
+        if (!activeThread) {
+            setThreadMessages([]);
+            return;
         }
-    }, [channelId, workspaceId, router]);
+
+        const fetchThread = async () => {
+            try {
+                const replies = await api.getMessages(channelId, activeThread.id);
+                const sorted = replies.sort((a: Message, b: Message) =>
+                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                setThreadMessages(sorted);
+            } catch (err) {
+                console.error("Error fetching thread:", err);
+            }
+        };
+        fetchThread();
+    }, [activeThread, channelId]);
 
     // WebSocket Connection
     useEffect(() => {
-        const token = localStorage.getItem("token");
-        if (!channelId || !token) return;
+        if (!currentUser) return;
 
-        // API_URL might be http://localhost:8001, we need ws://localhost:8001
-        const wsUrl = process.env.NEXT_PUBLIC_API_URL?.replace("http", "ws") || "ws://localhost:8005"; // Match backend default port 8005 from run_local.sh or 8001?
-        // Wait, metadata says backend running on port 8005. Default API_URL in api.ts is localhost:8001.
-        // User's metadata: "uv run uvicorn main:app --host 0.0.0.0 --port 8005"
-        // API_URL in api.ts: "process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'"
-        // This is a mismatch! I should probably check env or update api.ts.
-        // But for now, let's assume the user might have set ENV or the hardcoded 8001 is wrong.
-        // I will use 8005 here to be safe if env is missing, or rely on env.
-        // Actually, let's stick to what was there but update port if needed. 
-        // Logic: if window.location.port is 3000, backend is likely 8005 based on python command.
-        // But let's trust the existing logic or the env.
-
-        const url = `${wsUrl}/ws/${channelId}/${token}`;
+        const url = api.getWebSocketUrl(channelId);
+        console.log("Connecting WS to:", url);
 
         const ws = new WebSocket(url);
         wsRef.current = ws;
 
         ws.onopen = () => {
-            console.log("Connected to WebSocket");
+            console.log("WS Connected");
             setIsConnected(true);
         };
 
         ws.onmessage = (event) => {
             try {
-                const message = JSON.parse(event.data);
-                setMessages((prev) => {
-                    if (prev.find(m => m.id === message.id)) return prev;
-                    return [...prev, message];
-                });
-                setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'typing') {
+                    console.log("DEBUG: Received typing:", data);
+                    const isThread = !!data.parent_id;
+                    // Handle typing indicator
+                    // If parent_id is set, it belongs to a thread, handle if needed or pass to ThreadView
+                    // For now, only show in root if parent_id is null/undefined
+                    if (!data.parent_id && data.username && isConnected) {
+                        setTypingUsers(prev => {
+                            if (prev.includes(data.username)) return prev;
+                            return [...prev, data.username];
+                        });
+
+                        // Clear after 3 seconds
+                        setTimeout(() => {
+                            setTypingUsers(prev => prev.filter(u => u !== data.username));
+                        }, 3000);
+                    }
+                    return;
+                }
+
+                if (data.parent_id) {
+                    // It's a reply
+                    if (activeThreadRef.current && activeThreadRef.current.id === data.parent_id) {
+                        setThreadMessages(prev => {
+                            if (prev.some(m => m.id === data.id)) return prev;
+                            return [...prev, data];
+                        });
+                    }
+                } else {
+                    // It's a root message
+                    setMessages(prev => {
+                        if (prev.some(m => m.id === data.id)) return prev;
+                        return [...prev, data];
+                    });
+                }
             } catch (e) {
-                console.error("Error parsing WS message", e);
+                console.error("WS Message Parse Error:", e);
             }
         };
 
         ws.onclose = () => {
-            console.log("Disconnected from WebSocket");
+            console.log("WS Disconnected");
             setIsConnected(false);
+        };
+
+        ws.onerror = (err) => {
+            console.error("WS Error:", err);
         };
 
         return () => {
             ws.close();
         };
-    }, [channelId]);
+    }, [channelId, currentUser]);
 
-    // Scroll on initial load
+    // Auto-scroll to bottom
     useEffect(() => {
-        bottomRef.current?.scrollIntoView();
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSendMessage = async (e?: React.FormEvent) => {
+        e?.preventDefault();
         if (!newMessage.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-        const payload = { content: newMessage };
+        const payload = {
+            content: newMessage,
+            // parent_id is null for main chat
+        };
+
         wsRef.current.send(JSON.stringify(payload));
         setNewMessage("");
     };
 
-    if (!channelId) return <div>Select a channel</div>;
+    const handleSendReply = (content: string, parentId: string) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+        const payload = {
+            content: content,
+            parent_id: parentId
+        };
+
+        wsRef.current.send(JSON.stringify(payload));
+    };
+
+    const handleTyping = () => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+        const now = Date.now();
+        if (now - lastTypedRef.current > 2000) { // Throttle 2s
+            lastTypedRef.current = now;
+            console.log("DEBUG: Sending typing event");
+            wsRef.current.send(JSON.stringify({
+                type: "typing",
+                parent_id: null
+            }));
+        }
+    };
+
+    // Check if message is from current user
+    const isSelf = (msg: Message) => {
+        if (!currentUser) return false;
+        if (msg.user_id === currentUser.id) return true;
+        if (msg.sender && msg.sender.id === currentUser.id) return true;
+        return false;
+    };
 
     return (
-        <div className="flex flex-col h-full bg-transparent relative w-full font-outfit">
-            {/* Glass Header */}
-            <div className="h-16 px-6 border-b border-[#27272a] flex items-center justify-between z-10 bg-black/40 backdrop-blur-xl supports-[backdrop-filter]:bg-black/20 shrink-0">
-                <div className="flex items-center">
-                    <div className="p-2 rounded-lg bg-white/5 mr-3">
-                        <Hash className="w-5 h-5 text-red-500" />
+        <div className="absolute inset-0 flex flex-col bg-transparent overflow-hidden">
+
+            {/* Header */}
+            <div className="flex-none h-16 border-b border-white/10 flex items-center justify-between px-6 bg-black/40 backdrop-blur-xl z-20">
+                <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10">
+                        <Hash className="h-4 w-4 text-zinc-400" />
                     </div>
-                    <div className="flex flex-col">
-                        <h1 className="font-bold text-white text-lg tracking-wide">
-                            {currentChannel?.name || "Loading..."}
-                        </h1>
-                        <span className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold">Channel</span>
+                    <div>
+                        <h2 className="font-semibold text-white flex items-center gap-2">
+                            {channel?.name || "Loading..."}
+                            <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-medium text-zinc-400 tracking-wider">
+                                BETA
+                            </span>
+                        </h2>
+                        <p className="text-xs text-zinc-500">
+                            {isConnected ? "Connected" : "Connecting..."}
+                        </p>
                     </div>
                 </div>
-                {/* Connection Indicator */}
-                <div className="flex items-center space-x-2">
-                    <span className={cn("text-xs font-medium uppercase tracking-wider", isConnected ? "text-emerald-500" : "text-rose-500")}>
-                        {isConnected ? "Connected" : "Offline"}
-                    </span>
-                    <div className={`w-2 h-2 rounded-full transition-all duration-300 ${isConnected ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-rose-500 shadow-[0_0_10px_#f43f5e]'}`} />
+
+                <div className="flex items-center gap-2">
+                    <div className="flex -space-x-2 mr-4">
+                        {[1, 2, 3].map((i) => (
+                            <div key={i} className="h-6 w-6 rounded-full bg-zinc-800 border-2 border-black flex items-center justify-center text-[10px] text-zinc-500">
+                                U{i}
+                            </div>
+                        ))}
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10">
+                        <Users className="h-4 w-4" />
+                    </Button>
                 </div>
             </div>
 
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 custom-scrollbar">
-                {messages.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full text-center space-y-4 text-white/30 animate-scale-in">
-                        <div className="p-6 rounded-2xl bg-gradient-to-br from-white/5 to-transparent border border-white/5 shadow-2xl">
-                            <Hash className="w-12 h-12 text-red-500/50" />
-                        </div>
-                        <div>
-                            <p className="text-lg text-white/70">Welcome to <span className="font-bold text-white">#{currentChannel?.name}</span></p>
-                            <p className="text-sm text-white/40">This is the start of something great.</p>
-                        </div>
-                    </div>
-                )}
+            {/* Main Content Area (Chat + Thread) */}
+            <div className="flex-1 flex min-h-0 overflow-hidden relative">
 
-                {messages.map((message, idx) => {
-                    const isMe = currentUser?.username === message.user.username;
-                    // Check if previous message was same user to group them
-                    const isSameUser = idx > 0 && messages[idx - 1].user.username === message.user.username;
+                {/* Chat Column */}
+                <div className="flex-1 flex flex-col min-w-0">
 
-                    return (
-                        <div key={message.id} className={cn("group flex flex-col animate-fade-in-up", isSameUser ? "mt-0.5" : "mt-6")}>
-                            {!isSameUser && (
-                                <div className="flex items-baseline mb-1.5 ml-1">
-                                    <span className={cn("font-bold text-sm mr-2", isMe ? "text-red-400" : "text-neutral-300")}>
-                                        {message.user.username}
-                                    </span>
-                                    <span className="text-[10px] text-white/20 uppercase tracking-wide">
-                                        {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                    {/* Messages List */}
+                    <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar p-6 space-y-6">
+
+                        <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
+                            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-zinc-800 to-black border border-white/10 flex items-center justify-center mb-4 shadow-2xl">
+                                <Hash className="h-8 w-8 text-zinc-500" />
+                            </div>
+                            <h3 className="text-xl font-medium text-white mb-2">
+                                Welcome to #{channel?.name || "channel"}
+                            </h3>
+                            <p className="text-zinc-400 max-w-sm">
+                                This is the start of your conversation. Messages are encrypted and stored securely.
+                            </p>
+                        </div>
+
+                        {messages.map((msg, index) => {
+                            const isMe = isSelf(msg);
+                            const showAvatar = index === 0 || messages[index - 1].user_id !== msg.user_id;
+
+                            return (
+                                <div
+                                    key={msg.id || index}
+                                    className={`flex gap-4 ${isMe ? "flex-row-reverse" : "flex-row"} group`}
+                                >
+                                    <div className={`flex-none w-10 ${!showAvatar && "invisible"}`}>
+                                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center text-sm font-medium shadow-lg border border-white/10 ${isMe
+                                            ? "bg-gradient-to-br from-red-600 to-red-900 text-white"
+                                            : "bg-gradient-to-br from-zinc-800 to-zinc-950 text-zinc-300"
+                                            }`}>
+                                            {isMe ? "Me" : (msg.user?.username?.[0]?.toUpperCase() || "U")}
+                                        </div>
+                                    </div>
+
+                                    <div className={`flex flex-col max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
+                                        {showAvatar && (
+                                            <div className="flex items-center gap-2 mb-1 px-1">
+                                                <span className="text-sm font-medium text-zinc-300">
+                                                    {isMe ? "You" : (msg.user?.username || "Unknown")}
+                                                </span>
+                                                <span className="text-[10px] text-zinc-600">
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        <div className={`relative px-4 py-3 rounded-2xl ${messageFontSize} leading-relaxed shadow-lg backdrop-blur-sm border group-hover:shadow-xl transition-all ${isMe
+                                            ? "bg-red-500/10 border-red-500/30 text-red-100 rounded-tr-sm"
+                                            : "bg-white/5 border-white/20 text-zinc-100 rounded-tl-sm hover:bg-white/10"
+                                            }`}>
+                                            {msg.content}
+
+                                            {/* ID for debugging */}
+                                            {/* <div className="text-[8px] opacity-20 mt-1">{msg.id}</div> */}
+                                        </div>
+
+                                        {/* Actions (Reply) */}
+                                        <div className={`mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 ${isMe ? "justify-end" : "justify-start"}`}>
+                                            <button
+                                                onClick={() => setActiveThread(msg)}
+                                                className="text-xs text-zinc-500 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 transition-colors"
+                                            >
+                                                <MessageCircle className="w-3 h-3" />
+                                                Reply
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
-                            <div className={cn(
-                                "relative px-4 py-2.5 max-w-[85%] rounded-2xl text-[15px] leading-relaxed shadow-sm transition-all duration-200",
-                                isMe
-                                    ? "bg-red-600/20 text-white/95 rounded-tr-sm self-end border border-red-500/20 shadow-[0_4px_20px_rgba(220,38,38,0.1)] hover:bg-red-600/30"
-                                    : "bg-white/5 text-neutral-200 rounded-tl-sm self-start border border-white/5 hover:bg-white/10"
-                            )}>
-                                {message.content}
+                            );
+                        })}
+                        <div ref={messagesEndRef} />
+                    </div>
+
+                    {/* Input Area */}
+                    <div className="flex-none p-4 bg-transparent z-20 relative">
+                        {/* Typing Indicator */}
+                        {typingUsers.length > 0 && (
+                            <div className="absolute top-[-24px] left-8 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+                                <div className="flex gap-1 bg-black/40 px-2 py-1 rounded-full border border-white/10">
+                                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-bounce"></span>
+                                </div>
+                                <span className="text-xs text-zinc-400 font-medium">
+                                    {typingUsers.join(", ")} {typingUsers.length > 1 ? "are" : "is"} typing...
+                                </span>
+                            </div>
+                        )}
+                        <div className="max-w-4xl mx-auto w-full">
+                            <form
+                                onSubmit={handleSendMessage}
+                                className="relative flex items-center gap-2 p-2 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] focus-within:border-red-500/30 focus-within:ring-1 focus-within:ring-red-500/20 transition-all duration-300"
+                            >
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-10 w-10 text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl"
+                                >
+                                    <Monitor className="h-5 w-5" />
+                                </Button>
+
+                                <Input
+                                    value={newMessage}
+                                    onChange={(e) => {
+                                        setNewMessage(e.target.value);
+                                        handleTyping();
+                                    }}
+                                    placeholder={`Message #${channel?.name || "channel"}...`}
+                                    className="flex-1 bg-transparent border-none focus-visible:ring-0 text-white placeholder:text-zinc-600 h-10 px-2"
+                                />
+
+                                <div className="flex items-center gap-1 pr-1">
+                                    {newMessage.trim() && (
+                                        <Button
+                                            type="submit"
+                                            size="icon"
+                                            className="h-9 w-9 bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-lg shadow-red-900/20 transition-all duration-300 animate-in zoom-in-50"
+                                        >
+                                            <Send className="h-4 w-4" />
+                                        </Button>
+                                    )}
+                                </div>
+                            </form>
+                            <div className="text-center mt-2">
+                                <span className="text-[10px] text-zinc-600">
+                                    Press <kbd className="font-sans px-1 py-0.5 rounded bg-white/5 border border-white/10 text-zinc-500">Enter</kbd> to send
+                                </span>
                             </div>
                         </div>
-                    );
-                })}
-                <div ref={bottomRef} />
-            </div>
-
-            {/* Input Area */}
-            <div className="p-6 pb-8 shrink-0 bg-gradient-to-t from-black via-black/80 to-transparent">
-                <form onSubmit={handleSendMessage} className="relative group">
-                    <Input
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder={`Message #${currentChannel?.name || "..."}`}
-                        className="bg-[#0a0a0a] border border-[#27272a] text-white placeholder:text-neutral-600 h-14 pl-6 pr-14 rounded-xl focus-visible:ring-1 focus-visible:ring-red-500/50 focus-visible:border-red-500/50 shadow-lg transition-all"
-                        disabled={!isConnected}
-                    />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                        <Button
-                            size="sm"
-                            type="submit"
-                            disabled={!newMessage.trim() || !isConnected}
-                            className={cn(
-                                "h-8 w-8 p-0 rounded-lg transition-all duration-300",
-                                newMessage.trim() ? "bg-red-600 hover:bg-red-500 text-white shadow-[0_0_10px_#ef4444]" : "bg-white/5 text-white/20"
-                            )}
-                        >
-                            <span className="sr-only">Send</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-                            </svg>
-                        </Button>
                     </div>
-                </form>
+                </div>
+
+                {/* Thread Sidebar (Conditional) */}
+                {activeThread && currentUser && (
+                    <ThreadView
+                        channelId={channelId}
+                        parentMessage={activeThread}
+                        messages={threadMessages}
+                        currentUser={currentUser}
+                        onClose={() => setActiveThread(null)}
+                        onSendMessage={handleSendReply}
+                    />
+                )}
             </div>
         </div>
     );
 }
-
-// Helper icons
-import { Hash } from "lucide-react";
-import { cn } from "@/lib/utils";

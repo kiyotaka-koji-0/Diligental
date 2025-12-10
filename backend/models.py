@@ -23,6 +23,7 @@ class User(Base):
     channels = relationship("Channel", back_populates="owner")
     owned_workspaces = relationship("Workspace", back_populates="owner")
     workspace_memberships = relationship("WorkspaceMember", back_populates="user")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 class Workspace(Base):
     __tablename__ = "workspaces"
@@ -77,3 +78,16 @@ class Message(Base):
     user = relationship("User", back_populates="messages")
     replies = relationship("Message", back_populates="parent", remote_side=[id]) # Self-referential
     parent = relationship("Message", back_populates="replies", remote_side=[parent_id])
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(String, nullable=False)
+    type = Column(String, nullable=False) # 'mention', 'reply', 'system'
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    related_id = Column(UUID(as_uuid=True), nullable=True) # e.g. message_id
+
+    user = relationship("User", back_populates="notifications")
