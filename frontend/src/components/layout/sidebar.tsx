@@ -110,7 +110,10 @@ function useSidebarLogic(currentWorkspaceId: string) {
                 }
             };
 
-            ws.current.onerror = (e) => console.error("Notification WS Error", e);
+            ws.current.onerror = (e: Event) => {
+                const wsEvent = e as any;
+                console.error("Notification WS Error - Code:", wsEvent.code || 'unknown', "Reason:", wsEvent.reason || 'No reason provided');
+            };
 
         } catch (e) {
             console.error("Error setting up Notification WS", e);
@@ -168,7 +171,7 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
 
 
     return (
-        <div className="w-64 hidden md:flex flex-col h-full border-r border-white/10 select-none text-sm font-outfit bg-black/40 backdrop-blur-xl transition-all duration-300 shadow-[5px_0_30px_rgba(0,0,0,0.5)] z-20">
+        <div className="w-64 hidden md:flex flex-col h-full border-r border-white/10 select-none text-sm font-outfit glass-bg-1 glass-shadow-lg z-20">
             <SidebarContent
                 currentWorkspaceId={currentWorkspaceId}
                 currentWorkspace={currentWorkspace}
@@ -272,8 +275,8 @@ export function SidebarContent({
             <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
                     <button className="h-16 hover:bg-white/5 transition-all duration-300 flex items-center px-4 font-bold text-white w-full border-b border-white/10 outline-none group relative overflow-hidden shrink-0">
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center mr-3 shadow-lg border border-white/10 group-hover:scale-105 transition-transform">
+                        <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                        <div className="w-8 h-8 rounded-lg bg-linear-to-br from-red-600 to-red-900 flex items-center justify-center mr-3 shadow-lg border border-white/10 group-hover:scale-105 transition-transform">
                             <span className="text-sm font-bold">{currentWorkspace?.name.charAt(0).toUpperCase()}</span>
                         </div>
                         <span className="truncate flex-1 text-left tracking-wide text-sm font-semibold group-hover:text-red-400 transition-colors relative z-10 font-outfit">
@@ -289,7 +292,7 @@ export function SidebarContent({
                         align="start"
                         sideOffset={5}
                     >
-                        <DropdownMenu.Label className="text-[10px] font-bold text-neutral-500 px-3 py-2 uppercase tracking-widest bg-white/5 rounded-t-lg mx-[-4px] mt-[-4px] mb-1">
+                        <DropdownMenu.Label className="text-[10px] font-bold text-neutral-500 px-3 py-2 uppercase tracking-widest bg-white/5 rounded-t-lg -mx-1 -mt-1 mb-1">
                             Switch Workspace
                         </DropdownMenu.Label>
 
@@ -307,7 +310,7 @@ export function SidebarContent({
                             ))}
                         </div>
 
-                        <DropdownMenu.Separator className="h-[1px] bg-white/10 my-1 mx-2" />
+                        <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-2" />
 
                         <div className="p-1 space-y-0.5">
                             <DropdownMenu.Item
@@ -323,7 +326,7 @@ export function SidebarContent({
                             <JoinWorkspaceDialog />
                         </div>
 
-                        <DropdownMenu.Separator className="h-[1px] bg-white/10 my-1 mx-2" />
+                        <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-2" />
 
                         <div className="p-1">
                             <InviteUserDialog workspaceId={currentWorkspaceId} trigger={
@@ -376,7 +379,7 @@ export function SidebarContent({
                     </ContextMenu>
 
                     {/* Channel List */}
-                    <div className="space-y-[2px]">
+                    <div className="space-y-0.5">
                         {channels
                             .filter(c => c.type !== 'dm') // Filter out DMs
                             .map((channel, idx) => {
@@ -391,7 +394,7 @@ export function SidebarContent({
                                                 className={cn(
                                                     "flex items-center px-3 py-2 rounded-lg transition-all duration-200 group relative overflow-hidden",
                                                     isActive
-                                                        ? "bg-gradient-to-r from-red-600/10 to-transparent text-red-50"
+                                                        ? "bg-linear-to-r from-red-600/10 to-transparent text-red-50"
                                                         : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
                                                 )}
                                             >
@@ -459,7 +462,7 @@ export function SidebarContent({
                         </button>
                     </div>
 
-                    <div className="space-y-[2px]">
+                    <div className="space-y-0.5">
                         {channels
                             .filter(c => c.type === 'dm')
                             .map((channel, idx) => {
@@ -484,7 +487,7 @@ export function SidebarContent({
                                         className={cn(
                                             "flex items-center px-3 py-2 rounded-lg transition-all duration-200 group relative overflow-hidden",
                                             isActive
-                                                ? "bg-gradient-to-r from-red-600/10 to-transparent text-red-50"
+                                                ? "bg-linear-to-r from-red-600/10 to-transparent text-red-50"
                                                 : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
                                         )}
                                     >
@@ -513,9 +516,9 @@ export function SidebarContent({
                     <DropdownMenu.Trigger asChild>
                         <div className="flex-1 flex items-center p-2 rounded-xl hover:bg-white/5 transition-all duration-200 cursor-pointer group border border-transparent hover:border-white/5 relative overflow-hidden min-w-0">
                             {/* Gradient glow on hover */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-red-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="absolute inset-0 bg-linear-to-r from-red-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-neutral-800 to-neutral-700 border border-white/10 mr-3 flex items-center justify-center text-xs font-bold text-white shadow-inner shrink-0 relative">
+                            <div className="w-9 h-9 rounded-full bg-linear-to-tr from-neutral-800 to-neutral-700 border border-white/10 mr-3 flex items-center justify-center text-xs font-bold text-white shadow-inner shrink-0 relative">
                                 {currentUser?.username?.charAt(0).toUpperCase() || "?"}
                                 <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-[#1a1b26] rounded-full shadow-[0_0_4px_#10b981]" />
                             </div>
@@ -546,7 +549,7 @@ export function SidebarContent({
                                 Preferences
                             </DropdownMenu.Item>
 
-                            <DropdownMenu.Separator className="h-[1px] bg-white/10 my-1" />
+                            <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
 
                             <DropdownMenu.Item
                                 onSelect={handleLogout}
@@ -583,7 +586,7 @@ export function SidebarContent({
 
                             <div className="max-h-80 overflow-y-auto custom-scrollbar">
                                 {notifications.length === 0 ? (
-                                    <div className="p-8 text-center text-neutral-500 text-xs text-neutral-400 italic">
+                                    <div className="p-8 text-center text-xs text-neutral-400 italic">
                                         No notifications yet
                                     </div>
                                 ) : (

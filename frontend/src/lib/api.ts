@@ -49,7 +49,7 @@ export interface Message {
     parent_id?: string;
 }
 
-export interface Notification {
+export type Notification = {
     id: string;
     content: string;
     type: string; // 'mention', 'reply', 'system'
@@ -98,17 +98,49 @@ async function baseApiFetch<T>(method: string, endpoint: string, data?: any, opt
         }
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, config);
+    let response = await fetch(`${API_URL}${endpoint}`, config);
 
-    if (response.status === 401) {
+    if (response.status === 401 && endpoint !== '/auth/refresh') {
+        // Try to refresh token
         if (typeof window !== 'undefined') {
-            localStorage.removeItem('token');
-            // Prevent infinite redirect loop if already on login
-            if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-                window.location.href = '/login';
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (refreshToken) {
+                try {
+                    const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ refresh_token: refreshToken }),
+                    });
+
+                    if (refreshResponse.ok) {
+                        const newTokens = await refreshResponse.json();
+                        localStorage.setItem('token', newTokens.access_token);
+                        localStorage.setItem('refreshToken', newTokens.refresh_token);
+                        localStorage.setItem('tokenTimestamp', Date.now().toString());
+
+                        // Retry original request with new token
+                        const newConfig = { ...config };
+                        (newConfig.headers as any)['Authorization'] = `Bearer ${newTokens.access_token}`;
+                        response = await fetch(`${API_URL}${endpoint}`, newConfig);
+                    } else {
+                        throw new Error("Refresh failed");
+                    }
+                } catch (err) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('refreshToken');
+                    if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                        window.location.href = '/login';
+                    }
+                    throw new Error("Session expired. Please login again.");
+                }
+            } else {
+                localStorage.removeItem('token');
+                if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                    window.location.href = '/login';
+                }
+                throw new Error("Session expired. Please login again.");
             }
         }
-        throw new Error("Session expired. Please login again.");
     }
 
     if (!response.ok) {
@@ -202,6 +234,8 @@ export const api = {
     logout: () => {
         if (typeof window !== 'undefined') {
             localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('tokenTimestamp');
             window.location.href = '/login';
         }
     }

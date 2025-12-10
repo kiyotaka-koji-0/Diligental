@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef, use, useCallback } from "react";
-import { api, Message, Channel, User } from "@/lib/api";
-import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video } from "lucide-react";
+import { Message, Channel, User } from "@/lib/api";
+import api from "@/lib/api";
+import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video, Bell, BellOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ThreadView } from "@/components/chat/thread-view";
-import { useWebRTC } from "@/hooks/use-webrtc";
 import { CallOverlay } from "@/components/chat/call-overlay";
 import { VoiceChannel } from "@/components/chat/voice-channel";
 import { MobileSidebar } from "@/components/layout/sidebar";
+import { useWebRTC } from "@/hooks/use-webrtc";
 
 export default function ChannelPage({
     params,
@@ -22,6 +23,8 @@ export default function ChannelPage({
     const [channel, setChannel] = useState<Channel | null>(null);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     // Threading State
     const [activeThread, setActiveThread] = useState<Message | null>(null);
@@ -43,16 +46,22 @@ export default function ChannelPage({
     // Ref to access activeThread inside WebSocket callback without triggering re-connection
     const activeThreadRef = useRef<Message | null>(null);
 
+    // Call handling state
+    const [isCallActive, setIsCallActive] = useState(false);
+    const [isIncomingCall, setIsIncomingCall] = useState(false);
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
     // WebRTC Hook
     const {
         startCall,
         answerCall,
         endCall,
         handleSignal,
-        localStream,
-        remoteStream,
-        isCallActive,
-        incomingCall,
+        localStream: webrtcLocalStream,
+        remoteStream: webrtcRemoteStream,
+        isCallActive: webrtcCallActive,
+        incomingCall: webrtcIncomingCall,
         toggleAudio,
         toggleVideo,
         isAudioEnabled,
@@ -63,6 +72,13 @@ export default function ChannelPage({
         socket: wsRef.current,
         onIncomingCall: (senderId, senderName) => {
             console.log("Incoming call from", senderName);
+            // Show incoming call notification
+            showNotification(`Incoming call from ${senderName}`, {
+                body: 'Tap to answer or dismiss',
+                tag: `call-${senderId}`,
+                requireInteraction: true
+            });
+            handleIncomingCall();
         }
     });
 
@@ -72,10 +88,38 @@ export default function ChannelPage({
         handleSignalRef.current = handleSignal;
     }, [handleSignal]);
 
-    // Sync ref
+    // Notification handling function
+    const playNotificationSound = () => {
+        if (notificationsEnabled) {
+            try {
+                const audio = new Audio("data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==");
+                audio.play().catch(() => {});
+            } catch (e) {
+                console.log("Notification sound not available");
+            }
+        }
+    };
+
+    const showNotification = (title: string, options?: NotificationOptions) => {
+        if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+                new Notification(title, {
+                    icon: '/favicon.ico',
+                    ...options
+                });
+            } catch (e) {
+                console.log("Notifications not available");
+            }
+        }
+        playNotificationSound();
+    };
+
+    // Request notification permission on mount
     useEffect(() => {
-        activeThreadRef.current = activeThread;
-    }, [activeThread]);
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }, []);
 
     // Initial Data Fetch
     useEffect(() => {
@@ -193,6 +237,14 @@ export default function ChannelPage({
                             if (prev.some(m => m.id === data.id)) return prev;
                             return [...prev, data];
                         });
+                        // Show notification for thread reply
+                        if (data.user_id !== currentUser?.id) {
+                            showNotification(`New reply from ${data.user?.username || 'Someone'}`, {
+                                body: data.content.substring(0, 50) + (data.content.length > 50 ? '...' : ''),
+                                tag: `reply-${data.id}`
+                            });
+                            setUnreadCount(prev => prev + 1);
+                        }
                     }
                 } else {
                     // It's a root message
@@ -200,6 +252,14 @@ export default function ChannelPage({
                         if (prev.some(m => m.id === data.id)) return prev;
                         return [...prev, data];
                     });
+                    // Show notification for new message
+                    if (data.user_id !== currentUser?.id && data.content) {
+                        showNotification(`New message from ${data.user?.username || 'Someone'}`, {
+                            body: data.content.substring(0, 50) + (data.content.length > 50 ? '...' : ''),
+                            tag: `message-${data.id}`
+                        });
+                        setUnreadCount(prev => prev + 1);
+                    }
                 }
             } catch (e) {
                 console.error("WS Message Parse Error:", e);
@@ -211,8 +271,9 @@ export default function ChannelPage({
             setIsConnected(false);
         };
 
-        ws.onerror = (err) => {
-            console.error("WS Error:", err);
+        ws.onerror = (err: Event) => {
+            const wsEvent = err as any;
+            console.error("WS Error - Code:", wsEvent.code || 'unknown', "Reason:", wsEvent.reason || 'No reason provided');
         };
 
         return () => {
@@ -285,6 +346,21 @@ export default function ChannelPage({
         return false;
     };
 
+    const handleIncomingCall = () => {
+        setIsIncomingCall(true);
+    };
+
+    const handleStartCall = async () => {
+        if (!currentUser || !channelId) return;
+
+        console.log("Starting call as:", currentUser.username);
+        try {
+            await startCall();
+        } catch (err) {
+            console.error("Failed to start call:", err);
+        }
+    };
+
     if (channel?.type === 'voice') {
         return (
             <VoiceChannel
@@ -297,16 +373,16 @@ export default function ChannelPage({
     }
 
     return (
-        <div className="absolute inset-0 flex flex-col bg-transparent overflow-hidden">
+        <div className="absolute inset-0 flex flex-col glass-bg-3 overflow-hidden">
 
             <CallOverlay
-                localStream={localStream}
-                remoteStream={remoteStream}
+                localStream={webrtcLocalStream}
+                remoteStream={webrtcRemoteStream}
                 onEndCall={endCall}
-                isActive={isCallActive}
-                isIncoming={!!incomingCall}
+                isActive={webrtcCallActive}
+                isIncoming={webrtcIncomingCall ? true : false}
                 onAnswer={answerCall}
-                callerName={incomingCall?.senderName}
+                callerName={webrtcIncomingCall?.senderName || "User Name"}
                 toggleAudio={toggleAudio}
                 toggleVideo={toggleVideo}
                 isAudioEnabled={isAudioEnabled}
@@ -314,15 +390,15 @@ export default function ChannelPage({
             />
 
             {/* Header */}
-            <div className="flex-none h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-6 bg-black/40 backdrop-blur-xl z-20">
-                <div className="flex items-center gap-3">
+            <div className="flex-none h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-6 glass-bg-2 glass-shadow z-20">
+                <div className="flex items-center gap-3 flex-1">
                     <div className="md:hidden">
                         <MobileSidebar currentWorkspaceId={workspaceId} />
                     </div>
-                    <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10">
+                    <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 shadow-lg">
                         {channel?.type === 'dm' ? <Users className="h-4 w-4 text-zinc-400" /> : <Hash className="h-4 w-4 text-zinc-400" />}
                     </div>
-                    <div>
+                    <div className="flex-1">
                         <h2 className="font-semibold text-white flex items-center gap-2">
                             {(() => {
                                 if (channel?.type === 'dm' && channel.members && currentUser) {
@@ -336,25 +412,32 @@ export default function ChannelPage({
                                 {channel?.type === 'dm' ? 'DM' : 'BETA'}
                             </span>
                         </h2>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-zinc-500 flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'} animate-pulse`}></span>
                             {isConnected ? "Connected" : "Connecting..."}
                         </p>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {/* Call Button for DMs */}
-                    {channel?.type === 'dm' && (
-                        <Button
-                            onClick={startCall}
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-zinc-400 hover:text-green-400 hover:bg-green-500/10 mr-2"
-                            title="Start Call"
-                        >
-                            <Phone className="h-4 w-4" />
-                        </Button>
+                    {/* Unread Badge */}
+                    {unreadCount > 0 && (
+                        <div className="px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-lg text-xs font-medium text-red-300 flex items-center gap-1">
+                            <Bell className="w-3 h-3" />
+                            {unreadCount}
+                        </div>
                     )}
+
+                    {/* Notification Toggle */}
+                    <Button
+                        onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                        variant="ghost"
+                        size="icon"
+                        className={`h-8 w-8 ${notificationsEnabled ? 'text-green-400 hover:bg-green-500/10' : 'text-zinc-500 hover:bg-red-500/10'}`}
+                        title={notificationsEnabled ? "Notifications enabled" : "Notifications disabled"}
+                    >
+                        {notificationsEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                    </Button>
 
                     {channel?.type !== 'dm' && (
                         <div className="flex -space-x-2 mr-4">
@@ -367,6 +450,17 @@ export default function ChannelPage({
                     )}
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10">
                         <Users className="h-4 w-4" />
+                    </Button>
+
+                    {/* Call Button - New */}
+                    <Button
+                        onClick={handleStartCall}
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-green-400 hover:bg-green-500/10"
+                        title="Start Call"
+                    >
+                        <Phone className="h-4 w-4" />
                     </Button>
                 </div>
             </div>
@@ -381,7 +475,7 @@ export default function ChannelPage({
                     <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar p-6 space-y-6">
 
                         <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
-                            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-zinc-800 to-black border border-white/10 flex items-center justify-center mb-4 shadow-2xl">
+                            <div className="h-16 w-16 rounded-2xl bg-linear-to-br from-zinc-800 to-black border border-white/10 flex items-center justify-center mb-4 shadow-2xl">
                                 {channel?.type === 'dm' ? <Users className="h-8 w-8 text-zinc-500" /> : <Hash className="h-8 w-8 text-zinc-500" />}
                             </div>
                             <h3 className="text-xl font-medium text-white mb-2">
@@ -412,8 +506,8 @@ export default function ChannelPage({
                                 >
                                     <div className={`flex-none w-10 ${!showAvatar && "invisible"}`}>
                                         <div className={`h-10 w-10 rounded-xl flex items-center justify-center text-sm font-medium shadow-lg border border-white/10 ${isMe
-                                            ? "bg-gradient-to-br from-red-600 to-red-900 text-white"
-                                            : "bg-gradient-to-br from-zinc-800 to-zinc-950 text-zinc-300"
+                                            ? "bg-linear-to-br from-red-600 to-red-900 text-white"
+                                            : "bg-linear-to-br from-zinc-800 to-zinc-950 text-zinc-300"
                                             }`}>
                                             {isMe ? "Me" : (msg.user?.username?.[0]?.toUpperCase() || "U")}
                                         </div>
@@ -459,7 +553,7 @@ export default function ChannelPage({
                     <div className="flex-none p-4 bg-transparent z-20 relative">
                         {/* Typing Indicator */}
                         {typingUsers.length > 0 && (
-                            <div className="absolute top-[-24px] left-8 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="absolute -top-6 left-8 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
                                 <div className="flex gap-1 bg-black/40 px-2 py-1 rounded-full border border-white/10">
                                     <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                                     <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>

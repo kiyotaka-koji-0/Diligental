@@ -59,7 +59,11 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
 
 
     // Convert peers map to array for rendering
-    const peerList = useMemo(() => Array.from(peers.values()), [peers]);
+    const peerList = useMemo(() => {
+        const list = Array.from(peers.values());
+        console.log(`[VoiceChannel] Rendering ${list.length} peers`);
+        return list;
+    }, [peers]);
 
     if (!localStream) {
         return (
@@ -75,10 +79,11 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
                     </div>
                     <Button
                         onClick={joinVoice}
-                        className="bg-green-600 hover:bg-green-500 text-white px-8 py-6 rounded-full text-lg shadow-[0_0_30px_rgba(22,163,74,0.3)] transition-all hover:scale-105"
+                        className="bg-green-600 hover:bg-green-500 text-white px-8 py-6 rounded-full text-lg shadow-[0_0_30px_rgba(22,163,74,0.3)] transition-all hover:scale-105 disabled:opacity-50"
+                        disabled={!socket || socket.readyState !== WebSocket.OPEN}
                     >
                         <LogIn className="w-6 h-6 mr-3" />
-                        Join Voice
+                        {socket?.readyState === WebSocket.OPEN ? "Join Voice" : "Connecting..."}
                     </Button>
                 </div>
             </div>
@@ -132,20 +137,53 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
 
 function PeerVideo({ peer }: { peer: any }) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const [hasStream, setHasStream] = React.useState(!!peer.stream);
 
     useEffect(() => {
-        if (videoRef.current && peer.stream) {
-            videoRef.current.srcObject = peer.stream;
+        const video = videoRef.current;
+        if (!video) return;
+
+        if (peer.stream) {
+            console.log(`[PeerVideo] Setting srcObject for ${peer.userName}, tracks: ${peer.stream.getTracks().length}`);
+            video.srcObject = peer.stream;
+            setHasStream(true);
+            
+            // Ensure video is playing
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => {
+                    console.warn(`[PeerVideo] Video play failed for ${peer.userName}:`, err);
+                });
+            }
+        } else {
+            console.warn(`[PeerVideo] No stream available for ${peer.userName}`);
+            video.srcObject = null;
+            setHasStream(false);
         }
-    }, [peer.stream]);
+
+        return () => {
+            // Don't clear srcObject on unmount as it may cause the stream to stop
+        };
+    }, [peer.stream, peer.userName]);
 
     return (
-        <div className="relative bg-zinc-900 rounded-xl overflow-hidden border border-white/10 shadow-lg">
+        <div className="relative bg-zinc-900 rounded-xl overflow-hidden border border-white/10 shadow-lg group">
+            {!hasStream && (
+                <div className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-zinc-800 to-zinc-900 z-10">
+                    <div className="text-center space-y-2">
+                        <div className="w-12 h-12 rounded-full bg-zinc-700 mx-auto flex items-center justify-center">
+                            <div className="w-8 h-8 border-2 border-zinc-500 border-t-red-500 rounded-full animate-spin"></div>
+                        </div>
+                        <p className="text-xs text-zinc-400">Connecting...</p>
+                    </div>
+                </div>
+            )}
             <video
                 ref={videoRef}
                 autoPlay
                 playsInline
-                className="w-full h-full object-cover"
+                muted={false}
+                className={`w-full h-full object-cover ${!hasStream ? 'opacity-0' : 'opacity-100'}`}
             />
             <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur px-3 py-1 rounded-full text-sm font-medium">
                 {peer.userName}
