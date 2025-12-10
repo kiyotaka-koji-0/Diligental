@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, use } from "react";
+import { useState, useEffect, useRef, use, useCallback } from "react";
 import { api, Message, Channel, User } from "@/lib/api";
-import { Send, Hash, Users, Monitor, Bot, MessageCircle } from "lucide-react";
+import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ThreadView } from "@/components/chat/thread-view";
+import { useWebRTC } from "@/hooks/use-webrtc";
+import { CallOverlay } from "@/components/chat/call-overlay";
+import { VoiceChannel } from "@/components/chat/voice-channel";
+import { MobileSidebar } from "@/components/layout/sidebar";
 
 export default function ChannelPage({
     params,
@@ -25,6 +29,7 @@ export default function ChannelPage({
 
     // Typing State
     const [typingUsers, setTypingUsers] = useState<string[]>([]);
+    const [threadTypingUsers, setThreadTypingUsers] = useState<Record<string, string[]>>({});
     const lastTypedRef = useRef<number>(0);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -37,6 +42,35 @@ export default function ChannelPage({
     const wsRef = useRef<WebSocket | null>(null);
     // Ref to access activeThread inside WebSocket callback without triggering re-connection
     const activeThreadRef = useRef<Message | null>(null);
+
+    // WebRTC Hook
+    const {
+        startCall,
+        answerCall,
+        endCall,
+        handleSignal,
+        localStream,
+        remoteStream,
+        isCallActive,
+        incomingCall,
+        toggleAudio,
+        toggleVideo,
+        isAudioEnabled,
+        isVideoEnabled
+    } = useWebRTC({
+        user: currentUser,
+        channelId,
+        socket: wsRef.current,
+        onIncomingCall: (senderId, senderName) => {
+            console.log("Incoming call from", senderName);
+        }
+    });
+
+    // We need a ref to handleSignal to access the latest version inside the effect
+    const handleSignalRef = useRef(handleSignal);
+    useEffect(() => {
+        handleSignalRef.current = handleSignal;
+    }, [handleSignal]);
 
     // Sync ref
     useEffect(() => {
@@ -106,22 +140,48 @@ export default function ChannelPage({
             try {
                 const data = JSON.parse(event.data);
 
+                // Handle Signaling
+                if (['call_offer', 'call_answer', 'ice_candidate', 'call_end'].includes(data.type)) {
+                    // If voice channel, let VoiceChannel component handle it (it adds its own listener)
+                    if (channel?.type === 'voice') return;
+
+                    handleSignalRef.current(data);
+                    return;
+                }
+
                 if (data.type === 'typing') {
                     console.log("DEBUG: Received typing:", data);
                     const isThread = !!data.parent_id;
                     // Handle typing indicator
                     // If parent_id is set, it belongs to a thread, handle if needed or pass to ThreadView
                     // For now, only show in root if parent_id is null/undefined
-                    if (!data.parent_id && data.username && isConnected) {
-                        setTypingUsers(prev => {
-                            if (prev.includes(data.username)) return prev;
-                            return [...prev, data.username];
-                        });
-
-                        // Clear after 3 seconds
-                        setTimeout(() => {
-                            setTypingUsers(prev => prev.filter(u => u !== data.username));
-                        }, 3000);
+                    if (isConnected && data.username) {
+                        if (!data.parent_id) {
+                            // Main Channel Typing
+                            setTypingUsers(prev => {
+                                if (prev.includes(data.username)) return prev;
+                                return [...prev, data.username];
+                            });
+                            // Clear after 3 seconds
+                            setTimeout(() => {
+                                setTypingUsers(prev => prev.filter(u => u !== data.username));
+                            }, 3000);
+                        } else {
+                            // Thread Typing
+                            const pid = data.parent_id;
+                            setThreadTypingUsers(prev => {
+                                const current = prev[pid] || [];
+                                if (current.includes(data.username)) return prev;
+                                return { ...prev, [pid]: [...current, data.username] };
+                            });
+                            // Clear after 3 seconds
+                            setTimeout(() => {
+                                setThreadTypingUsers(prev => ({
+                                    ...prev,
+                                    [pid]: (prev[pid] || []).filter(u => u !== data.username)
+                                }));
+                            }, 3000);
+                        }
                     }
                     return;
                 }
@@ -158,7 +218,7 @@ export default function ChannelPage({
         return () => {
             ws.close();
         };
-    }, [channelId, currentUser]);
+    }, [channelId, currentUser, channel?.type]); // Added channel?.type to deps
 
     // Auto-scroll to bottom
     useEffect(() => {
@@ -203,6 +263,20 @@ export default function ChannelPage({
         }
     };
 
+    const handleThreadTyping = (parentId: string) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+        const now = Date.now();
+        if (now - lastTypedRef.current > 2000) {
+            lastTypedRef.current = now;
+            console.log("DEBUG: Sending THREAD typing event");
+            wsRef.current.send(JSON.stringify({
+                type: "typing",
+                parent_id: parentId
+            }));
+        }
+    };
+
     // Check if message is from current user
     const isSelf = (msg: Message) => {
         if (!currentUser) return false;
@@ -211,20 +285,55 @@ export default function ChannelPage({
         return false;
     };
 
+    if (channel?.type === 'voice') {
+        return (
+            <VoiceChannel
+                channelId={channelId}
+                workspaceId={workspaceId}
+                user={currentUser}
+                socket={wsRef.current}
+            />
+        );
+    }
+
     return (
         <div className="absolute inset-0 flex flex-col bg-transparent overflow-hidden">
 
+            <CallOverlay
+                localStream={localStream}
+                remoteStream={remoteStream}
+                onEndCall={endCall}
+                isActive={isCallActive}
+                isIncoming={!!incomingCall}
+                onAnswer={answerCall}
+                callerName={incomingCall?.senderName}
+                toggleAudio={toggleAudio}
+                toggleVideo={toggleVideo}
+                isAudioEnabled={isAudioEnabled}
+                isVideoEnabled={isVideoEnabled}
+            />
+
             {/* Header */}
-            <div className="flex-none h-16 border-b border-white/10 flex items-center justify-between px-6 bg-black/40 backdrop-blur-xl z-20">
+            <div className="flex-none h-16 border-b border-white/10 flex items-center justify-between px-4 md:px-6 bg-black/40 backdrop-blur-xl z-20">
                 <div className="flex items-center gap-3">
+                    <div className="md:hidden">
+                        <MobileSidebar currentWorkspaceId={workspaceId} />
+                    </div>
                     <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10">
-                        <Hash className="h-4 w-4 text-zinc-400" />
+                        {channel?.type === 'dm' ? <Users className="h-4 w-4 text-zinc-400" /> : <Hash className="h-4 w-4 text-zinc-400" />}
                     </div>
                     <div>
                         <h2 className="font-semibold text-white flex items-center gap-2">
-                            {channel?.name || "Loading..."}
+                            {(() => {
+                                if (channel?.type === 'dm' && channel.members && currentUser) {
+                                    const otherMember = channel.members.find((m: any) => m.user.id !== currentUser.id);
+                                    if (otherMember) return otherMember.user.username;
+                                    return "Direct Message"; // Fallback
+                                }
+                                return channel?.name || "Loading...";
+                            })()}
                             <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-medium text-zinc-400 tracking-wider">
-                                BETA
+                                {channel?.type === 'dm' ? 'DM' : 'BETA'}
                             </span>
                         </h2>
                         <p className="text-xs text-zinc-500">
@@ -234,13 +343,28 @@ export default function ChannelPage({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <div className="flex -space-x-2 mr-4">
-                        {[1, 2, 3].map((i) => (
-                            <div key={i} className="h-6 w-6 rounded-full bg-zinc-800 border-2 border-black flex items-center justify-center text-[10px] text-zinc-500">
-                                U{i}
-                            </div>
-                        ))}
-                    </div>
+                    {/* Call Button for DMs */}
+                    {channel?.type === 'dm' && (
+                        <Button
+                            onClick={startCall}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-zinc-400 hover:text-green-400 hover:bg-green-500/10 mr-2"
+                            title="Start Call"
+                        >
+                            <Phone className="h-4 w-4" />
+                        </Button>
+                    )}
+
+                    {channel?.type !== 'dm' && (
+                        <div className="flex -space-x-2 mr-4">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="h-6 w-6 rounded-full bg-zinc-800 border-2 border-black flex items-center justify-center text-[10px] text-zinc-500">
+                                    U{i}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-white/10">
                         <Users className="h-4 w-4" />
                     </Button>
@@ -258,13 +382,22 @@ export default function ChannelPage({
 
                         <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
                             <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-zinc-800 to-black border border-white/10 flex items-center justify-center mb-4 shadow-2xl">
-                                <Hash className="h-8 w-8 text-zinc-500" />
+                                {channel?.type === 'dm' ? <Users className="h-8 w-8 text-zinc-500" /> : <Hash className="h-8 w-8 text-zinc-500" />}
                             </div>
                             <h3 className="text-xl font-medium text-white mb-2">
-                                Welcome to #{channel?.name || "channel"}
+                                {(() => {
+                                    if (channel?.type === 'dm' && channel.members && currentUser) {
+                                        const otherMember = channel.members.find((m: any) => m.user.id !== currentUser.id);
+                                        return `Conversation with ${otherMember?.user.username || "Unknown"}`;
+                                    }
+                                    return `Welcome to #${channel?.name || "channel"}`;
+                                })()}
                             </h3>
                             <p className="text-zinc-400 max-w-sm">
-                                This is the start of your conversation. Messages are encrypted and stored securely.
+                                {channel?.type === 'dm'
+                                    ? "This is the start of your direct message history."
+                                    : "This is the start of your conversation. Messages are encrypted and stored securely."
+                                }
                             </p>
                         </div>
 
@@ -303,9 +436,6 @@ export default function ChannelPage({
                                             : "bg-white/5 border-white/20 text-zinc-100 rounded-tl-sm hover:bg-white/10"
                                             }`}>
                                             {msg.content}
-
-                                            {/* ID for debugging */}
-                                            {/* <div className="text-[8px] opacity-20 mt-1">{msg.id}</div> */}
                                         </div>
 
                                         {/* Actions (Reply) */}
@@ -394,6 +524,8 @@ export default function ChannelPage({
                         currentUser={currentUser}
                         onClose={() => setActiveThread(null)}
                         onSendMessage={handleSendReply}
+                        onTyping={() => handleThreadTyping(activeThread.id)}
+                        typingUsers={threadTypingUsers[activeThread.id] || []}
                     />
                 )}
             </div>

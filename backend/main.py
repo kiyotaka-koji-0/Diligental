@@ -42,7 +42,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Diligental API", version="0.1.0", lifespan=lifespan)
 
 # CORS configuration
-origins = ["*"]
+origins = [
+    "http://localhost:3000",
+    "http://localhost:8005",
+    "https://kiyotaka.starling-kanyu.ts.net",
+    "https://kiyotaka.starling-kanyu.ts.net:8443",
+    "*" # Keep wildcard for now as fallback, but specific origins help with credentials
+]
 
 app.add_middleware(
     CORSMiddleware,

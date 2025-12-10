@@ -32,15 +32,30 @@ class TokenData(BaseModel):
 class ChannelBase(BaseModel):
     name: str
     description: Optional[str] = None
+    type: Optional[str] = "public"
 
 class ChannelCreate(ChannelBase):
     workspace_id: uuid.UUID
 
+class DMChannelCreate(BaseModel):
+    workspace_id: uuid.UUID
+    target_user_id: uuid.UUID
+
+class ChannelMemberOut(BaseModel):
+    user_id: uuid.UUID
+    joined_at: datetime
+    user: Optional[UserOut] = None
+
+    class Config:
+        from_attributes = True
+
 class Channel(ChannelBase):
     id: uuid.UUID
     created_at: datetime
+    type: str = "public"
     owner_id: Optional[uuid.UUID] = None
     workspace_id: uuid.UUID
+    members: Optional[list[ChannelMemberOut]] = [] # Populate for DMs or filtered lists
 
     class Config:
         from_attributes = True

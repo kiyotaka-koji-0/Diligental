@@ -6,13 +6,36 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Users, MessageSquare, Zap, TrendingUp, ArrowRight } from "lucide-react";
 import { CustomNotification } from "@/components/ui/custom-notification";
+import { api } from "@/lib/api";
 
 export default function LandingPage() {
   const router = useRouter();
 
   const [showNotification, setShowNotification] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [lastWorkspaceId, setLastWorkspaceId] = useState<string | null>(null);
 
- 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem("token");
+      if (token) {
+        try {
+          // Verify token is valid
+          await api.getMe();
+          setIsAuthenticated(true);
+          const savedWorkspace = localStorage.getItem("lastWorkspaceId");
+          setLastWorkspaceId(savedWorkspace);
+        } catch (e) {
+          // Token invalid
+          localStorage.removeItem("token");
+          setIsAuthenticated(false);
+        }
+      }
+    };
+    checkAuth();
+  }, []);
+
+
 
   return (
     <div className="min-h-screen flex flex-col relative text-white selection:bg-red-500/30">
@@ -31,12 +54,23 @@ export default function LandingPage() {
             Diligental
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/login">
-              <Button variant="ghost" className="text-gray-300 hover:text-white">Login</Button>
-            </Link>
-            <Link href="/register">
-              <Button className="bg-white text-black hover:bg-gray-200 border-0 shadow-lg shadow-white/10">Get Started</Button>
-            </Link>
+            {isAuthenticated ? (
+              <Link href={lastWorkspaceId ? `/client/${lastWorkspaceId}/general` : "/client"}>
+                <Button className="bg-white text-black hover:bg-gray-200 border-0 shadow-lg shadow-white/10">
+                  Dashboard
+                  <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/login">
+                  <Button variant="ghost" className="text-gray-300 hover:text-white">Login</Button>
+                </Link>
+                <Link href="/register">
+                  <Button className="bg-white text-black hover:bg-gray-200 border-0 shadow-lg shadow-white/10">Get Started</Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -66,11 +100,19 @@ export default function LandingPage() {
 
         {/* Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 animate-fade-in-up opacity-0" style={{ animationDelay: "0.4s" }}>
-          <Link href="/register">
-            <Button size="lg" className="h-14 px-8 text-base shadow-[0_0_30px_rgba(220,38,38,0.4)] hover:shadow-[0_0_40px_rgba(220,38,38,0.6)] transition-all duration-300">
-              Get Started <ArrowRight className="ml-2 w-4 h-4" />
-            </Button>
-          </Link>
+          {isAuthenticated ? (
+            <Link href={lastWorkspaceId ? `/client/${lastWorkspaceId}/general` : "/client"}>
+              <Button size="lg" className="h-14 px-8 text-base shadow-[0_0_30px_rgba(220,38,38,0.4)] hover:shadow-[0_0_40px_rgba(220,38,38,0.6)] transition-all duration-300">
+                Go to Dashboard <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </Link>
+          ) : (
+            <Link href="/register">
+              <Button size="lg" className="h-14 px-8 text-base shadow-[0_0_30px_rgba(220,38,38,0.4)] hover:shadow-[0_0_40px_rgba(220,38,38,0.6)] transition-all duration-300">
+                Get Started <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </Link>
+          )}
           <Link href="#features">
             <Button size="lg" variant="outline" className="h-14 px-8 text-base bg-white/5 border-white/10 hover:bg-white/10 backdrop-blur-sm">
               View Features

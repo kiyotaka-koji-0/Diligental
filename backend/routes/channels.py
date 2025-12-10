@@ -5,7 +5,7 @@ import uuid
 
 from database import get_db
 import crud
-from schemas import Channel, ChannelCreate, Message, MessageCreate
+from schemas import Channel, ChannelCreate, Message, MessageCreate, DMChannelCreate
 from models import User
 from deps import get_current_user
 
@@ -31,6 +31,30 @@ async def create_channel(
     
     return await crud.create_channel(db=db, channel=channel, owner_id=current_user.id, workspace_id=channel.workspace_id)
 
+@router.post("/dm", response_model=Channel)
+async def create_dm_channel(
+    dm_create: DMChannelCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Verify both users are in workspace
+    # 1. Current user
+    current_member = await crud.get_workspace_member(db, dm_create.workspace_id, current_user.id)
+    if not current_member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+        
+    # 2. Target user
+    target_member = await crud.get_workspace_member(db, dm_create.workspace_id, dm_create.target_user_id)
+    if not target_member:
+         raise HTTPException(status_code=404, detail="Target user not found in workspace")
+
+    return await crud.get_or_create_dm_channel(
+        db=db,
+        workspace_id=dm_create.workspace_id,
+        user1_id=current_user.id,
+        user2_id=dm_create.target_user_id
+    )
+
 @router.get("/", response_model=List[Channel])
 async def read_channels(
     workspace_id: uuid.UUID,
@@ -44,7 +68,7 @@ async def read_channels(
     if not member:
         raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
-    channels = await crud.get_channels(db, workspace_id=workspace_id, skip=skip, limit=limit)
+    channels = await crud.get_channels(db, workspace_id=workspace_id, user_id=current_user.id, skip=skip, limit=limit)
     return channels
 
 @router.post("/{channel_id}/messages", response_model=Message)

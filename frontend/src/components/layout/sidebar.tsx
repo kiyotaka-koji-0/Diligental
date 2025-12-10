@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter, usePathname } from "next/navigation";
-import { ChevronDown, Hash, Plus, Settings, LogOut, Check, UserPlus, MoreVertical, Bell, Edit2, Trash2 } from "lucide-react";
+import { ChevronDown, Hash, Plus, Settings, LogOut, Check, UserPlus, MoreVertical, Bell, Edit2, Trash2, Volume2 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import api, { Notification } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,9 @@ import { DeleteChannelDialog } from "@/components/channel/delete-channel-dialog"
 import { JoinWorkspaceDialog } from "@/components/workspace/join-workspace-dialog";
 import { InviteUserDialog } from "@/components/workspace/invite-user-dialog";
 import { CreateChannelDialog } from "@/components/channel/create-channel-dialog";
+import { CreateDMDialog } from "@/components/channel/create-dm-dialog";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Menu } from "lucide-react";
 import {
     ContextMenu,
     ContextMenuContent,
@@ -29,6 +32,8 @@ interface Channel {
     id: string;
     name: string;
     workspace_id: string;
+    type?: 'public' | 'private' | 'dm' | 'voice';
+    members?: { user: User }[];
 }
 
 interface User {
@@ -37,22 +42,17 @@ interface User {
     email: string;
 }
 
-export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) {
+// Logic Hook extracted for reusability
+
+function useSidebarLogic(currentWorkspaceId: string) {
     const router = useRouter();
     const pathname = usePathname();
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
     const [channels, setChannels] = useState<Channel[]>([]);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [isCreateOpen, setIsCreateOpen] = useState(false);
-    const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
-
-    // Channel Action States
-    const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-    const [channelToRename, setChannelToRename] = useState<Channel | null>(null);
-    const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null);
+    const ws = useRef<WebSocket | null>(null);
 
     const fetchData = async () => {
         try {
@@ -80,8 +80,6 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
     }, [currentWorkspaceId]);
 
     // Notification Logic
-    const ws = useRef<WebSocket | null>(null);
-
     useEffect(() => {
         const fetchNotifs = async () => {
             try {
@@ -140,8 +138,136 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
         api.logout();
     };
 
+    return {
+        workspaces,
+        currentWorkspace,
+        channels,
+        currentUser,
+        notifications,
+        unreadCount,
+        handleWorkspaceChange,
+        handleLogout,
+        handleMarkRead,
+        fetchData
+    };
+}
+
+export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) {
+    const {
+        workspaces,
+        currentWorkspace,
+        channels,
+        currentUser,
+        notifications,
+        unreadCount,
+        handleWorkspaceChange,
+        handleLogout,
+        handleMarkRead,
+        fetchData
+    } = useSidebarLogic(currentWorkspaceId);
+
+
     return (
-        <div className="w-64 flex flex-col h-full border-r border-white/10 select-none text-sm font-outfit bg-black/40 backdrop-blur-xl transition-all duration-300 shadow-[5px_0_30px_rgba(0,0,0,0.5)] z-20">
+        <div className="w-64 hidden md:flex flex-col h-full border-r border-white/10 select-none text-sm font-outfit bg-black/40 backdrop-blur-xl transition-all duration-300 shadow-[5px_0_30px_rgba(0,0,0,0.5)] z-20">
+            <SidebarContent
+                currentWorkspaceId={currentWorkspaceId}
+                currentWorkspace={currentWorkspace}
+                workspaces={workspaces}
+                currentUser={currentUser}
+                channels={channels}
+                notifications={notifications}
+                unreadCount={unreadCount}
+                handleWorkspaceChange={handleWorkspaceChange}
+                handleLogout={handleLogout}
+                handleMarkRead={handleMarkRead}
+                fetchData={fetchData}
+            />
+        </div>
+    );
+}
+
+export function MobileSidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) {
+    const {
+        workspaces,
+        currentWorkspace,
+        channels,
+        currentUser,
+        notifications,
+        unreadCount,
+        handleWorkspaceChange,
+        handleLogout,
+        handleMarkRead,
+        fetchData
+    } = useSidebarLogic(currentWorkspaceId);
+
+    return (
+        <Sheet>
+            <SheetTrigger asChild>
+                <div className="md:hidden mr-2 p-2 rounded-lg hover:bg-white/10 cursor-pointer">
+                    <Menu className="w-6 h-6 text-white" />
+                </div>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 border-r border-white/10 bg-black/95 w-72 text-white border-none">
+                <SheetTitle className="sr-only">Navigation</SheetTitle>
+                <SheetDescription className="sr-only">Main Navigation</SheetDescription>
+                <SidebarContent
+                    currentWorkspaceId={currentWorkspaceId}
+                    currentWorkspace={currentWorkspace}
+                    workspaces={workspaces}
+                    currentUser={currentUser}
+                    channels={channels}
+                    notifications={notifications}
+                    unreadCount={unreadCount}
+                    handleWorkspaceChange={handleWorkspaceChange}
+                    handleLogout={handleLogout}
+                    handleMarkRead={handleMarkRead}
+                    fetchData={fetchData}
+                />
+            </SheetContent>
+        </Sheet>
+    );
+}
+
+// Extracted Content Component for Reusability (Mobile Sheet)
+export function SidebarContent({
+    currentWorkspaceId,
+    currentWorkspace,
+    workspaces,
+    currentUser,
+    channels,
+    notifications,
+    unreadCount,
+    handleWorkspaceChange,
+    handleLogout,
+    handleMarkRead,
+    fetchData
+}: {
+    currentWorkspaceId: string;
+    currentWorkspace: Workspace | null;
+    workspaces: Workspace[];
+    currentUser: User | null;
+    channels: Channel[];
+    notifications: Notification[];
+    unreadCount: number;
+    handleWorkspaceChange: (id: string) => void;
+    handleLogout: () => void;
+    handleMarkRead: (id: string) => void;
+    fetchData: () => Promise<void>;
+}) {
+    const router = useRouter();
+    const pathname = usePathname();
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
+    const [isCreateDMOpen, setIsCreateDMOpen] = useState(false);
+
+    // Channel Action States
+    const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [channelToRename, setChannelToRename] = useState<Channel | null>(null);
+    const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null);
+
+    return (
+        <div className="flex flex-col h-full w-full">
             {/* Header / Workspace Switcher */}
             <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
@@ -219,46 +345,141 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
             {/* Channels Section */}
             <div className="flex-1 overflow-y-auto py-6 px-3 space-y-6 custom-scrollbar scroll-smooth">
                 {/* Channel Group */}
-                {/* Channels Header with Context Menu */}
-                <ContextMenu>
-                    <ContextMenuTrigger asChild>
-                        <div className="px-3 mb-2 flex items-center justify-between group cursor-default hover:bg-white/5 rounded-md transition-colors py-1">
-                            <span className="text-neutral-500 font-bold text-[10px] uppercase tracking-widest group-hover:text-neutral-300 transition-colors">
-                                Channels
-                            </span>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setIsCreateChannelOpen(true);
-                                }}
-                                className="text-neutral-600 hover:text-white transition-all transform hover:scale-110 opacity-0 group-hover:opacity-100 duration-200"
+                <div>
+                    {/* Channels Header with Context Menu */}
+                    <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                            <div className="px-3 mb-2 flex items-center justify-between group cursor-default hover:bg-white/5 rounded-md transition-colors py-1">
+                                <span className="text-neutral-500 font-bold text-[10px] uppercase tracking-widest group-hover:text-neutral-300 transition-colors">
+                                    Channels
+                                </span>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsCreateChannelOpen(true);
+                                    }}
+                                    className="text-neutral-600 hover:text-white transition-all transform hover:scale-110 opacity-0 group-hover:opacity-100 duration-200"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="bg-[#0a0a0a]/95 backdrop-blur-md border border-white/10 text-neutral-200 rounded-xl shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-100">
+                            <ContextMenuItem
+                                className="flex items-center px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white outline-none text-xs font-medium"
+                                onSelect={() => setIsCreateChannelOpen(true)}
                             >
-                                <Plus className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent className="bg-[#0a0a0a]/95 backdrop-blur-md border border-white/10 text-neutral-200 rounded-xl shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-100">
-                        <ContextMenuItem
-                            className="flex items-center px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white outline-none text-xs font-medium"
-                            onSelect={() => setIsCreateChannelOpen(true)}
+                                <Plus className="w-3.5 h-3.5 mr-2 text-neutral-400" />
+                                Create Channel
+                            </ContextMenuItem>
+                        </ContextMenuContent>
+                    </ContextMenu>
+
+                    {/* Channel List */}
+                    <div className="space-y-[2px]">
+                        {channels
+                            .filter(c => c.type !== 'dm') // Filter out DMs
+                            .map((channel, idx) => {
+                                const isActive = pathname?.includes(`/${channel.id}`);
+                                const hasUnread = !isActive && idx % 3 === 0;
+
+                                return (
+                                    <ContextMenu key={channel.id}>
+                                        <ContextMenuTrigger asChild>
+                                            <Link
+                                                href={`/client/${currentWorkspaceId}/${channel.id}`}
+                                                className={cn(
+                                                    "flex items-center px-3 py-2 rounded-lg transition-all duration-200 group relative overflow-hidden",
+                                                    isActive
+                                                        ? "bg-gradient-to-r from-red-600/10 to-transparent text-red-50"
+                                                        : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                                                )}
+                                            >
+                                                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-red-500 rounded-r-full shadow-[0_0_8px_#ef4444]" />}
+
+                                                {channel.type === 'voice' ? (
+                                                    <Volume2 className={cn("w-4 h-4 mr-3 transition-colors shrink-0", isActive ? "text-red-500" : "opacity-40 group-hover:opacity-70")} />
+                                                ) : (
+                                                    <Hash className={cn("w-4 h-4 mr-3 transition-colors shrink-0", isActive ? "text-red-500" : "opacity-40 group-hover:opacity-70")} />
+                                                )}
+                                                <span className={cn("truncate font-medium text-[14px]", isActive ? "text-white font-semibold" : hasUnread ? "text-neutral-200 font-medium" : "")}>
+                                                    {channel.name}
+                                                </span>
+
+                                                {hasUnread && (
+                                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white group-hover:bg-red-400 transition-colors shadow-[0_0_5px_rgba(255,255,255,0.5)]" />
+                                                )}
+
+                                                {/* Hover Glow Effect */}
+                                                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                                            </Link>
+                                        </ContextMenuTrigger>
+                                        <ContextMenuContent className="bg-[#0a0a0a]/95 backdrop-blur-md border border-white/10 text-neutral-200 rounded-xl shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-100">
+                                            <ContextMenuItem
+                                                className="flex items-center px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white outline-none text-xs font-medium"
+                                                onSelect={() => {
+                                                    setChannelToRename(channel);
+                                                    setIsRenameDialogOpen(true);
+                                                }}
+                                            >
+                                                <Edit2 className="w-3.5 h-3.5 mr-2 text-neutral-400" />
+                                                Edit Channel
+                                            </ContextMenuItem>
+                                            <ContextMenuItem
+                                                className="flex items-center px-2 py-2 rounded-lg hover:bg-red-500/10 text-red-500 hover:text-red-400 cursor-pointer focus:bg-red-500/10 focus:text-red-400 outline-none mt-0.5 text-xs font-medium border border-transparent focus:border-red-500/20"
+                                                onSelect={() => {
+                                                    setChannelToDelete(channel);
+                                                    setIsDeleteDialogOpen(true);
+                                                }}
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                                Delete Channel
+                                            </ContextMenuItem>
+                                        </ContextMenuContent>
+                                    </ContextMenu>
+                                )
+                            })}
+                    </div>
+                </div>
+
+                {/* Direct Messages Group */}
+                <div>
+                    <div className="px-3 mb-2 flex items-center justify-between group cursor-default hover:bg-white/5 rounded-md transition-colors py-1">
+                        <span className="text-neutral-500 font-bold text-[10px] uppercase tracking-widest group-hover:text-neutral-300 transition-colors">
+                            Direct Messages
+                        </span>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsCreateDMOpen(true);
+                            }}
+                            className="text-neutral-600 hover:text-white transition-all transform hover:scale-110 opacity-0 group-hover:opacity-100 duration-200"
                         >
-                            <Plus className="w-3.5 h-3.5 mr-2 text-neutral-400" />
-                            Create Channel
-                        </ContextMenuItem>
-                    </ContextMenuContent>
-                </ContextMenu>
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
 
-                {/* Channel List */}
-                <div className="space-y-[2px]">
-                    {channels.map((channel, idx) => {
-                        const isActive = pathname?.includes(`/${channel.id}`);
-                        // Mock unread for visual demo (randomly true for first few non-active channels)
-                        const hasUnread = !isActive && idx % 3 === 0;
+                    <div className="space-y-[2px]">
+                        {channels
+                            .filter(c => c.type === 'dm')
+                            .map((channel, idx) => {
+                                const isActive = pathname?.includes(`/${channel.id}`);
+                                let displayName = channel.name;
+                                let statusColor = "bg-neutral-500";
 
-                        return (
-                            <ContextMenu key={channel.id}>
-                                <ContextMenuTrigger asChild>
+                                if (channel.type === 'dm' && channel.members && currentUser) {
+                                    const otherMember = channel.members.find((m: any) => m.user.id !== currentUser.id);
+                                    if (otherMember) {
+                                        displayName = otherMember.user.username;
+                                        statusColor = "bg-green-500";
+                                    } else {
+                                        displayName = "Unknown User";
+                                    }
+                                }
+
+                                return (
                                     <Link
+                                        key={channel.id}
                                         href={`/client/${currentWorkspaceId}/${channel.id}`}
                                         className={cn(
                                             "flex items-center px-3 py-2 rounded-lg transition-all duration-200 group relative overflow-hidden",
@@ -269,44 +490,20 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
                                     >
                                         {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-red-500 rounded-r-full shadow-[0_0_8px_#ef4444]" />}
 
-                                        <Hash className={cn("w-4 h-4 mr-3 transition-colors shrink-0", isActive ? "text-red-500" : "opacity-40 group-hover:opacity-70")} />
-                                        <span className={cn("truncate font-medium text-[14px]", isActive ? "text-white font-semibold" : hasUnread ? "text-neutral-200 font-medium" : "")}>
-                                            {channel.name}
+                                        <div className="relative mr-3 shrink-0">
+                                            <div className="w-4 h-4 rounded-full bg-neutral-700 flex items-center justify-center text-[8px] font-bold text-neutral-300">
+                                                {displayName.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[#0a0a0a]", statusColor)} />
+                                        </div>
+
+                                        <span className={cn("truncate font-medium text-[14px]", isActive ? "text-white font-semibold" : "")}>
+                                            {displayName}
                                         </span>
-
-                                        {hasUnread && (
-                                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white group-hover:bg-red-400 transition-colors shadow-[0_0_5px_rgba(255,255,255,0.5)]" />
-                                        )}
-
-                                        {/* Hover Glow Effect */}
-                                        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                                     </Link>
-                                </ContextMenuTrigger>
-                                <ContextMenuContent className="bg-[#0a0a0a]/95 backdrop-blur-md border border-white/10 text-neutral-200 rounded-xl shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-100">
-                                    <ContextMenuItem
-                                        className="flex items-center px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white outline-none text-xs font-medium"
-                                        onSelect={() => {
-                                            setChannelToRename(channel);
-                                            setIsRenameDialogOpen(true);
-                                        }}
-                                    >
-                                        <Edit2 className="w-3.5 h-3.5 mr-2 text-neutral-400" />
-                                        Edit Channel
-                                    </ContextMenuItem>
-                                    <ContextMenuItem
-                                        className="flex items-center px-2 py-2 rounded-lg hover:bg-red-500/10 text-red-500 hover:text-red-400 cursor-pointer focus:bg-red-500/10 focus:text-red-400 outline-none mt-0.5 text-xs font-medium border border-transparent focus:border-red-500/20"
-                                        onSelect={() => {
-                                            setChannelToDelete(channel);
-                                            setIsDeleteDialogOpen(true);
-                                        }}
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5 mr-2" />
-                                        Delete Channel
-                                    </ContextMenuItem>
-                                </ContextMenuContent>
-                            </ContextMenu>
-                        )
-                    })}
+                                )
+                            })}
+                    </div>
                 </div>
             </div>
 
@@ -441,25 +638,37 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
                 onSuccess={fetchData}
             />
 
-            {channelToRename && (
-                <RenameChannelDialog
-                    open={isRenameDialogOpen}
-                    onOpenChange={setIsRenameDialogOpen}
-                    channelId={channelToRename.id}
-                    currentName={channelToRename.name}
-                    onSuccess={fetchData}
-                />
-            )}
+            <CreateDMDialog
+                open={isCreateDMOpen}
+                onOpenChange={setIsCreateDMOpen}
+                workspaceId={currentWorkspaceId}
+                onSuccess={fetchData}
+            />
 
-            {channelToDelete && (
-                <DeleteChannelDialog
-                    open={isDeleteDialogOpen}
-                    onOpenChange={setIsDeleteDialogOpen}
-                    channelId={channelToDelete.id}
-                    channelName={channelToDelete.name}
-                    onSuccess={fetchData}
-                />
-            )}
-        </div>
+
+            {
+                channelToRename && (
+                    <RenameChannelDialog
+                        open={isRenameDialogOpen}
+                        onOpenChange={setIsRenameDialogOpen}
+                        channelId={channelToRename.id}
+                        currentName={channelToRename.name}
+                        onSuccess={fetchData}
+                    />
+                )
+            }
+
+            {
+                channelToDelete && (
+                    <DeleteChannelDialog
+                        open={isDeleteDialogOpen}
+                        onOpenChange={setIsDeleteDialogOpen}
+                        channelId={channelToDelete.id}
+                        channelName={channelToDelete.name}
+                        onSuccess={fetchData}
+                    />
+                )
+            }
+        </div >
     )
 }

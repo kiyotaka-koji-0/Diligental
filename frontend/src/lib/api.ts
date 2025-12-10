@@ -32,6 +32,8 @@ export interface Channel {
     workspace_id: string;
     name: string;
     description?: string;
+    type?: 'public' | 'private' | 'dm' | 'voice';
+    members?: { user: User }[];
 }
 
 export interface Message {
@@ -156,11 +158,13 @@ export const api = {
 
     getWorkspaces: () => api.get<Workspace[]>('/workspaces/'),
     getWorkspace: (id: string) => api.get<Workspace>(`/workspaces/${id}`),
+    getWorkspaceMembers: (id: string) => api.get<any[]>(`/workspaces/${id}/members`),
 
     // Channels
     getChannels: (workspaceId: string) => baseApiFetch<Channel[]>('GET', '/channels/', { workspace_id: workspaceId }),
-    createChannel: (workspaceId: string, name: string, description?: string) => api.post<Channel>('/channels/', { workspace_id: workspaceId, name, description }),
-    deleteChannel: (channelId: string) => api.delete(`/channels/${channelId}`),
+    createChannel: (workspaceId: string, name: string, description?: string, type: 'public' | 'private' | 'voice' = 'public') => api.post<Channel>('/channels/', { workspace_id: workspaceId, name, description, type }),
+    createDM: (workspaceId: string, targetUserId: string) => api.post<Channel>('/channels/dm', { workspace_id: workspaceId, target_user_id: targetUserId }),
+    deleteChannel: (channelId: string) => baseApiFetch<void>('DELETE', `/channels/${channelId}`, undefined, { headers: {} }).catch(e => { if (e.message !== "Unexpected end of JSON input") throw e; }),
     updateChannel: (channelId: string, name: string) => baseApiFetch<Channel>('PATCH', `/channels/${channelId}`, { name }),
     getChannel: (channelId: string) => api.get<Channel>(`/channels/${channelId}`),
 
@@ -169,11 +173,26 @@ export const api = {
 
     // WebSocket
     getWebSocketUrl: (channelId: string) => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Dynamic host: Use current browser hostname to allow external access (Tailscale, LAN)
-        const host = typeof window !== 'undefined' ? `${window.location.hostname}:8005` : 'localhost:8005';
+        let wsRoot;
+        if (API_URL) {
+            // Derive WS URL from API URL (handles custom ports/domains like Tailscale)
+            try {
+                const url = new URL(API_URL);
+                const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsRoot = `${protocol}//${url.host}`;
+            } catch (e) {
+                // Fallback if API_URL is invalid
+                wsRoot = 'ws://localhost:8005';
+            }
+        } else {
+            // Fallback default
+            const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+            wsRoot = `${protocol}//${host}:8005`;
+        }
+
         const token = localStorage.getItem('token');
-        return `${protocol}//${host}/ws/${channelId}/${token}`;
+        return `${wsRoot}/ws/${channelId}/${token}`;
     },
 
     // Notifications

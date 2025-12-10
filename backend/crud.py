@@ -37,6 +37,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
 # Channels
 from models import Channel, Message
 from schemas import ChannelCreate, MessageCreate
+from sqlalchemy.orm import joinedload
 import uuid
 
 async def get_channel_by_name(db: AsyncSession, name: str):
@@ -44,29 +45,121 @@ async def get_channel_by_name(db: AsyncSession, name: str):
     return result.scalars().first()
 
 async def get_channel(db: AsyncSession, channel_id: uuid.UUID):
-    result = await db.execute(select(Channel).filter(Channel.id == channel_id))
+    result = await db.execute(
+        select(Channel)
+        .options(joinedload(Channel.members).joinedload(models.ChannelMember.user))
+        .filter(Channel.id == channel_id)
+    )
     return result.scalars().first()
 
 async def create_channel(db: AsyncSession, channel: ChannelCreate, owner_id: uuid.UUID, workspace_id: uuid.UUID):
     db_channel = Channel(
         name=channel.name,
         description=channel.description,
+        type=channel.type,
         owner_id=owner_id,
         workspace_id=workspace_id
     )
     db.add(db_channel)
     await db.commit()
     await db.refresh(db_channel)
+    # Fix MissingGreenlet: manually set members to empty list to avoid async lazy load
+    db_channel.members = []
     return db_channel
 
-async def get_channels(db: AsyncSession, workspace_id: uuid.UUID, skip: int = 0, limit: int = 100):
-    result = await db.execute(
+async def get_channels(db: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID, skip: int = 0, limit: int = 100):
+    # Filter channels:
+    # 1. Public/Voice channels are visible to all (or logic to be refined)
+    # 2. Private/DM channels are visible ONLY if user is a member
+    
+    from sqlalchemy import or_, and_
+    
+    stmt = (
         select(Channel)
+        .options(joinedload(Channel.members).joinedload(models.ChannelMember.user))
+        .outerjoin(models.ChannelMember, and_(
+            models.ChannelMember.channel_id == Channel.id,
+            models.ChannelMember.user_id == user_id
+        ))
         .filter(Channel.workspace_id == workspace_id)
+        .filter(
+            or_(
+                Channel.type.in_(['public', 'voice']),
+                and_(
+                    Channel.type.in_(['private', 'dm']),
+                    models.ChannelMember.user_id == user_id
+                )
+            )
+        )
         .offset(skip)
         .limit(limit)
     )
-    return result.scalars().all()
+    
+    result = await db.execute(stmt)
+    return result.scalars().unique().all()
+
+async def get_or_create_dm_channel(db: AsyncSession, workspace_id: uuid.UUID, user1_id: uuid.UUID, user2_id: uuid.UUID):
+    # Check for existing DM
+    # SQL: Select channel_id from channel_members where user_id in (u1, u2) group by channel_id having count=2
+    # In SQLAlchemy ORM this is tricky, let's do a subquery or simplified check.
+    # Since DM is a unique pair in a workspace...
+    
+    # 1. Find all channels user1 is in with type='dm'
+    # 2. Filter which of those user2 is also in.
+    
+    # Efficient enough for now:
+    stmt = (
+        select(models.Channel)
+        .join(models.ChannelMember, models.Channel.id == models.ChannelMember.channel_id)
+        .filter(
+            models.Channel.workspace_id == workspace_id,
+            models.Channel.type == 'dm',
+            models.ChannelMember.user_id == user1_id
+        )
+    )
+    result = await db.execute(stmt)
+    user1_dms = result.scalars().all()
+    
+    for channel in user1_dms:
+        # Check if user2 is a member
+        stmt2 = select(models.ChannelMember).filter(
+            models.ChannelMember.channel_id == channel.id,
+            models.ChannelMember.user_id == user2_id
+        )
+        res2 = await db.execute(stmt2)
+        if res2.scalars().first():
+            return channel
+
+            return channel
+
+    # Create new DM
+    # Name convention: "DM" (frontend can resolve actual names based on members)
+    new_channel = models.Channel(
+        name="direct_message", # Placeholder
+        type="dm",
+        workspace_id=workspace_id,
+        owner_id=user1_id
+    )
+    db.add(new_channel)
+    await db.flush()
+    
+    # Add members
+    member1 = models.ChannelMember(channel_id=new_channel.id, user_id=user1_id)
+    member2 = models.ChannelMember(channel_id=new_channel.id, user_id=user2_id)
+    db.add(member1)
+    db.add(member2)
+    
+    await db.commit()
+    
+    # Re-fetch to load relationships
+    stmt = (
+        select(models.Channel)
+        .options(joinedload(models.Channel.members).joinedload(models.ChannelMember.user))
+        .filter(models.Channel.id == new_channel.id)
+    )
+    result = await db.execute(stmt)
+    return result.scalars().first()
+
 
 # Messages
 async def create_message(db: AsyncSession, message: MessageCreate, user_id: uuid.UUID):
@@ -157,6 +250,15 @@ async def get_workspace_member(db: AsyncSession, workspace_id: uuid.UUID, user_i
         )
     )
     return result.scalars().first()
+
+async def get_workspace_members(db: AsyncSession, workspace_id: uuid.UUID):
+    result = await db.execute(
+        select(models.WorkspaceMember)
+        .options(joinedload(models.WorkspaceMember.user))
+        .filter(models.WorkspaceMember.workspace_id == workspace_id)
+    )
+    return result.scalars().all()
+
 
 from sqlalchemy.orm import joinedload
 

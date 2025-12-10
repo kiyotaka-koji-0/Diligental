@@ -18,10 +18,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" style={{ height: '100%', overflow: 'hidden' }}>
+    <html lang="en" style={{ height: '100%' }}>
       <body
         className={`${outfit.variable} font-sans antialiased`}
-        style={{ height: '100%', overflow: 'hidden', margin: 0, padding: 0 }}
+        style={{ height: '100%', margin: 0, padding: 0 }}
       >
         <div className="bg-grid-pattern" />
         {children}

@@ -50,7 +50,7 @@ export function ThreadView({
     }
 
     return (
-        <div className="flex flex-col h-full w-96 border-l border-white/10 bg-black/40 backdrop-blur-md">
+        <div className="flex flex-col h-full w-full md:w-96 absolute md:static inset-0 z-50 md:z-0 border-l border-white/10 bg-black/95 md:bg-black/40 backdrop-blur-md">
             {/* Header */}
             <div className="h-14 flex items-center justify-between px-4 border-b border-white/10 flex-none bg-black/20">
                 <h3 className="font-semibold text-white">Thread</h3>

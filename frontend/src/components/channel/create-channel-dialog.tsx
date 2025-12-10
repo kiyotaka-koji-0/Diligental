@@ -33,6 +33,7 @@ export function CreateChannelDialog({
     const [error, setError] = useState("")
     const [name, setName] = useState("")
     const [description, setDescription] = useState("")
+    const [type, setType] = useState<'public' | 'voice'>('public')
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -42,11 +43,12 @@ export function CreateChannelDialog({
         setError("")
 
         try {
-            await api.createChannel(workspaceId, name, description)
+            await api.createChannel(workspaceId, name, description, type)
 
             // Reset form
             setName("")
             setDescription("")
+            setType("public")
 
             onOpenChange(false)
             router.refresh()
@@ -98,6 +100,28 @@ export function CreateChannelDialog({
                             disabled={isLoading}
                             className="bg-white/5 border-white/10 text-white focus:border-red-500/50"
                         />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label className="text-neutral-300">Channel Type</Label>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                variant={type === 'public' ? 'default' : 'outline'}
+                                onClick={() => setType('public')}
+                                className={type === 'public' ? 'bg-red-600 hover:bg-red-700' : 'bg-transparent border-white/20 hover:bg-white/10 text-white'}
+                            >
+                                # Text
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={type === 'voice' ? 'default' : 'outline'}
+                                onClick={() => setType('voice')}
+                                className={type === 'voice' ? 'bg-red-600 hover:bg-red-700' : 'bg-transparent border-white/20 hover:bg-white/10 text-white'}
+                            >
+                                🔊 Voice
+                            </Button>
+                        </div>
                     </div>
 
                     <DialogFooter>

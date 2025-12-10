@@ -23,6 +23,7 @@ class User(Base):
     channels = relationship("Channel", back_populates="owner")
     owned_workspaces = relationship("Workspace", back_populates="owner")
     workspace_memberships = relationship("WorkspaceMember", back_populates="user")
+    channel_memberships = relationship("ChannelMember", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 class Workspace(Base):
@@ -49,12 +50,24 @@ class WorkspaceMember(Base):
     workspace = relationship("Workspace", back_populates="members")
     user = relationship("User", back_populates="workspace_memberships")
 
+class ChannelMember(Base):
+    __tablename__ = "channel_members"
+
+    channel_id = Column(UUID(as_uuid=True), ForeignKey("channels.id"), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_read_at = Column(DateTime(timezone=True), nullable=True)
+
+    channel = relationship("Channel", back_populates="members")
+    user = relationship("User", back_populates="channel_memberships")
+
 class Channel(Base):
     __tablename__ = "channels"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, index=True, nullable=False) # Name unique only within workspace now? Or globally? Let's make it scoped later, removing unique=True for now generally or keeping it but it might conflict. Let's remove unique global constraint.
+    name = Column(String, index=True, nullable=False)
     description = Column(String, nullable=True)
+    type = Column(String, default="public") # 'public', 'private', 'dm', 'voice'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False)
@@ -62,6 +75,7 @@ class Channel(Base):
     owner = relationship("User", back_populates="channels")
     workspace = relationship("Workspace", back_populates="channels")
     messages = relationship("Message", back_populates="channel", cascade="all, delete-orphan")
+    members = relationship("ChannelMember", back_populates="channel", cascade="all, delete-orphan")
 
 class Message(Base):
     __tablename__ = "messages"

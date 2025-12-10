@@ -96,4 +96,22 @@ async def get_workspace(
     workspace = await crud.get_workspace(db, workspace_id)
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
     return workspace
+
+@router.get("/{workspace_id}/members", response_model=List[schemas.WorkspaceMemberOut])
+async def get_workspace_members(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Verify membership
+    member = await crud.get_workspace_member(db, workspace_id, current_user.id)
+    if not member:
+         raise HTTPException(status_code=403, detail="Not a member of this workspace")
+         
+    # Fetch members (need a CRUD method or direct query)
+    # Let's add crud.get_workspace_members
+    return await crud.get_workspace_members(db, workspace_id)
+

@@ -59,6 +59,18 @@ async def websocket_endpoint(
                         "username": user.username,
                         "parent_id": payload.get("parent_id")
                     }, channel_id)
+                # WebRTC Signaling & Voice Presence
+                if payload.get("type") in ["call_offer", "call_answer", "ice_candidate", "call_end", "voice_join", "voice_presence", "voice_leave"]:
+                    print(f"DEBUG: Signaling event {payload.get('type')} from {user.username}")
+                    # Broadcast the signal to the channel (DM)
+                    # The frontend must filter out its own messages or we can filter here if we had target_user_id
+                    await manager.broadcast({
+                        "type": payload.get("type"),
+                        "payload": payload.get("payload"),
+                        "target_user_id": payload.get("target_user_id"),
+                        "sender_id": str(user.id),
+                        "sender_username": user.username
+                    }, channel_id)
                     continue
 
                 content = payload.get("content")
