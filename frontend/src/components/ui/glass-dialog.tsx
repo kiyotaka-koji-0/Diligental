@@ -34,8 +34,7 @@ export function GlassDialog({ isOpen, onClose, title, children, className }: Gla
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in-up">
             <div
                 className={cn(
-                    "relative w-full max-w-md p-6 glass-panel animate-scale-in",
-                    "border border-white/10 shadow-2xl",
+                    "relative w-full max-w-md p-6 glass-premium animate-scale-in glass-shadow-xl",
                     className
                 )}
             >

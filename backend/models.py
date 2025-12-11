@@ -25,6 +25,7 @@ class User(Base):
     workspace_memberships = relationship("WorkspaceMember", back_populates="user")
     channel_memberships = relationship("ChannelMember", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    reactions = relationship("Reaction", back_populates="user", cascade="all, delete-orphan")
 
 class Workspace(Base):
     __tablename__ = "workspaces"
@@ -92,6 +93,23 @@ class Message(Base):
     user = relationship("User", back_populates="messages")
     replies = relationship("Message", back_populates="parent", remote_side=[id]) # Self-referential
     parent = relationship("Message", back_populates="replies", remote_side=[parent_id])
+    reactions = relationship("Reaction", back_populates="message", cascade="all, delete-orphan")
+    attachments = relationship("Attachment", back_populates="message", cascade="all, delete-orphan")
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), nullable=True) # Can be null initially if uploaded before message sent
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False) # Local path or S3 key
+    file_type = Column(String, nullable=False) # MIME type
+    file_size = Column(Integer, nullable=False) # Bytes
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    message = relationship("Message", back_populates="attachments")
+    user = relationship("User")
 
 class Notification(Base):
     __tablename__ = "notifications"
@@ -105,3 +123,16 @@ class Notification(Base):
     related_id = Column(UUID(as_uuid=True), nullable=True) # e.g. message_id
 
     user = relationship("User", back_populates="notifications")
+
+class Reaction(Base):
+    __tablename__ = "reactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    emoji = Column(String(10), nullable=False)  # Store emoji character or shortcode
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    message = relationship("Message", back_populates="reactions")
+    user = relationship("User", back_populates="reactions")

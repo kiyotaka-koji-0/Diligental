@@ -53,7 +53,7 @@ export function CallOverlay({
     return (
         <div className={`transition-all duration-300 ease-in-out ${isFullScreen
             ? "fixed inset-0 z-50 bg-black"
-            : "absolute top-4 right-4 w-80 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 animate-in slide-in-from-right fade-in"
+            : "absolute top-4 right-4 w-80 glass-premium rounded-2xl glass-shadow-lg z-50 animate-in slide-in-from-right fade-in"
             } overflow-hidden`}>
             {/* Incoming Call View */}
             {isIncoming && !isActive && (
@@ -62,8 +62,8 @@ export function CallOverlay({
                         <Video className="h-8 w-8 text-red-400" />
                     </div>
                     <div>
-                        <h3 className="text-lg font-semibold text-white">Incoming Call</h3>
-                        <p className="text-sm text-zinc-400">from {callerName || "Unknown"}</p>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Incoming Call</h3>
+                        <p className="text-sm text-gray-500 dark:text-zinc-400">from {callerName || "Unknown"}</p>
                     </div>
                     <div className="flex gap-4 w-full max-w-xs">
                         <Button

@@ -61,6 +61,37 @@ class Channel(ChannelBase):
     class Config:
         from_attributes = True
 
+# Reaction Schemas
+class ReactionBase(BaseModel):
+    emoji: str
+
+class ReactionCreate(ReactionBase):
+    message_id: uuid.UUID
+
+class ReactionOut(ReactionBase):
+    id: uuid.UUID
+    message_id: uuid.UUID
+    user_id: uuid.UUID
+    created_at: datetime
+    user: Optional[UserOut] = None
+
+    class Config:
+        from_attributes = True
+
+# Attachment Schemas
+class AttachmentBase(BaseModel):
+    filename: str
+    file_type: str
+    file_size: int
+
+class AttachmentOut(AttachmentBase):
+    id: uuid.UUID
+    file_path: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Message Schemas
 class MessageBase(BaseModel):
     content: str
@@ -68,7 +99,7 @@ class MessageBase(BaseModel):
     parent_id: Optional[uuid.UUID] = None
 
 class MessageCreate(MessageBase):
-    pass
+    attachment_ids: Optional[list[uuid.UUID]] = []
 
 class Message(MessageBase):
     id: uuid.UUID
@@ -76,6 +107,9 @@ class Message(MessageBase):
     user_id: uuid.UUID
     user: Optional[UserOut] = None # Embed basic user info
     parent_id: Optional[uuid.UUID] = None
+    reply_count: Optional[int] = 0  # For thread preview
+    reactions: Optional[list[ReactionOut]] = []
+    attachments: Optional[list[AttachmentOut]] = []
 
     class Config:
         from_attributes = True

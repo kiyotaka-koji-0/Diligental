@@ -7,10 +7,11 @@ interface WebRTCConfig {
     user: User | null;
     channelId: string;
     socket: WebSocket | null;
+    targetUserId?: string;  // For DM calls - the other user's ID
     onIncomingCall?: (senderId: string, senderName: string) => void;
 }
 
-export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCConfig) => {
+export const useWebRTC = ({ user, channelId, socket, targetUserId, onIncomingCall }: WebRTCConfig) => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [isCallActive, setIsCallActive] = useState(false);
@@ -67,10 +68,14 @@ export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCCon
 
         pc.onicecandidate = (event) => {
             if (event.candidate && socket?.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
+                const payload: any = {
                     type: 'ice_candidate',
                     payload: event.candidate
-                }));
+                };
+                if (targetUserId) {
+                    payload.target_user_id = targetUserId;
+                }
+                socket.send(JSON.stringify(payload));
             }
         };
 
@@ -89,7 +94,7 @@ export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCCon
 
         peerConnection.current = pc;
         return pc;
-    }, [socket, iceServers]);
+    }, [iceServers, targetUserId]); // Removed socket from dependencies
 
     const processIceQueue = async () => {
         if (!peerConnection.current) return;
@@ -128,10 +133,14 @@ export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCCon
             setIsCallActive(true);
 
             if (socket?.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
+                const payload: any = {
                     type: 'call_offer',
                     payload: offer
-                }));
+                };
+                if (targetUserId) {
+                    payload.target_user_id = targetUserId;
+                }
+                socket.send(JSON.stringify(payload));
             }
         } catch (err) {
             console.error("Error starting call:", err);
@@ -173,10 +182,14 @@ export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCCon
             await processIceQueue();
 
             if (socket?.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
+                const payload: any = {
                     type: 'call_answer',
                     payload: answer
-                }));
+                };
+                if (targetUserId) {
+                    payload.target_user_id = targetUserId;
+                }
+                socket.send(JSON.stringify(payload));
             }
 
         } catch (err) {
@@ -188,7 +201,11 @@ export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCCon
 
     const endCall = () => {
         if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: 'call_end' }));
+            const payload: any = { type: 'call_end' };
+            if (targetUserId) {
+                payload.target_user_id = targetUserId;
+            }
+            socket.send(JSON.stringify(payload));
         }
         cleanup();
     };
@@ -244,7 +261,7 @@ export const useWebRTC = ({ user, channelId, socket, onIncomingCall }: WebRTCCon
         } catch (err) {
             console.error("Signaling error:", err);
         }
-    }, [socket, user, onIncomingCall, iceServers, createPeerConnection, cleanup]);
+    }, [user, onIncomingCall, createPeerConnection, cleanup]);
 
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);

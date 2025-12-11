@@ -6,20 +6,32 @@ class ConnectionManager:
     def __init__(self):
         # Map channel_id to list of active WebSockets
         self.active_connections: Dict[str, List[WebSocket]] = {}
+        # Map user_id to list of notification WebSockets
         self.user_connections: Dict[str, List[WebSocket]] = {}
+        # Track which channel each user is currently viewing (for call routing)
+        self.user_locations: Dict[str, str] = {}  # user_id -> channel_id
 
-    async def connect(self, websocket: WebSocket, channel_id: str):
+    async def connect(self, websocket: WebSocket, channel_id: str, user_id: str = None):
         await websocket.accept()
         if channel_id not in self.active_connections:
             self.active_connections[channel_id] = []
         self.active_connections[channel_id].append(websocket)
+        
+        # Track user location if user_id provided
+        if user_id:
+            self.user_locations[user_id] = channel_id
 
-    def disconnect(self, websocket: WebSocket, channel_id: str):
+    def disconnect(self, websocket: WebSocket, channel_id: str, user_id: str = None):
         if channel_id in self.active_connections:
             if websocket in self.active_connections[channel_id]:
                 self.active_connections[channel_id].remove(websocket)
             if not self.active_connections[channel_id]:
                 del self.active_connections[channel_id]
+        
+        # Remove user location tracking if provided
+        if user_id and user_id in self.user_locations:
+            if self.user_locations[user_id] == channel_id:
+                del self.user_locations[user_id]
 
     async def broadcast(self, message: dict, channel_id: str):
         if channel_id in self.active_connections:
@@ -56,5 +68,19 @@ class ConnectionManager:
                     await connection.send_text(message_str)
                 except Exception:
                     pass
+    
+    async def send_call_signal(self, message: dict, target_user_id: str):
+        """Send call signals to user's notification WebSocket (cross-channel)"""
+        if target_user_id in self.user_connections:
+            message_str = json.dumps(message, default=str)
+            for connection in self.user_connections[target_user_id]:
+                try:
+                    await connection.send_text(message_str)
+                except Exception:
+                    pass
+    
+    def get_user_channel(self, user_id: str) -> str:
+        """Get the channel a user is currently viewing"""
+        return self.user_locations.get(user_id)
 
 manager = ConnectionManager()

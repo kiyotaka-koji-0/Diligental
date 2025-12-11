@@ -6,7 +6,7 @@ import json
 from database import get_db
 from ws_manager import manager
 from security import verify_access_token
-from crud import get_user_by_username, create_message
+from crud import get_user_by_username, create_message, add_reaction, remove_reaction
 from schemas import MessageCreate
 
 # Note: WebSocket endpoints cannot easily use standard Depends(get_current_user) 
@@ -40,7 +40,7 @@ async def websocket_endpoint(
     # 3. Connect
     # Convert string channel_id to UUID if needed, but our Manager uses Dict[str, ...]
     # so keeping it as string is fine for the key.
-    await manager.connect(websocket, channel_id)
+    await manager.connect(websocket, channel_id, str(user.id))
 
     try:
         while True:
@@ -59,28 +59,79 @@ async def websocket_endpoint(
                         "username": user.username,
                         "parent_id": payload.get("parent_id")
                     }, channel_id)
+                    continue
+                    
                 # WebRTC Signaling & Voice Presence
                 if payload.get("type") in ["call_offer", "call_answer", "ice_candidate", "call_end", "voice_join", "voice_presence", "voice_leave"]:
                     print(f"DEBUG: Signaling event {payload.get('type')} from {user.username}")
-                    # Broadcast the signal to the channel (DM)
-                    # The frontend must filter out its own messages or we can filter here if we had target_user_id
-                    await manager.broadcast({
+                    
+                    signal_message = {
                         "type": payload.get("type"),
                         "payload": payload.get("payload"),
                         "target_user_id": payload.get("target_user_id"),
                         "sender_id": str(user.id),
-                        "sender_username": user.username
-                    }, channel_id)
+                        "sender_username": user.username,
+                        "channel_id": channel_id
+                    }
+                    
+                    # If target_user_id specified, send directly to that user (cross-channel)
+                    target_user_id = payload.get("target_user_id")
+                    if target_user_id:
+                        # Send to target user's notification WebSocket (cross-channel call)
+                        await manager.send_call_signal(signal_message, target_user_id)
+                        # Also send back to sender's channel for confirmation
+                        await manager.broadcast(signal_message, channel_id)
+                    else:
+                        # No target specified - broadcast to channel only (voice channels, same-channel calls)
+                        await manager.broadcast(signal_message, channel_id)
+                    continue
+
+                # Reaction Handling
+                if payload.get("type") == "reaction_add":
+                    message_id = payload.get("message_id")
+                    emoji = payload.get("emoji")
+                    if message_id and emoji:
+                        reaction = await add_reaction(db, uuid.UUID(message_id), user.id, emoji)
+                        if reaction:
+                            await manager.broadcast({
+                                "type": "reaction_add",
+                                "message_id": message_id,
+                                "user_id": str(user.id),
+                                "username": user.username,
+                                "emoji": emoji
+                            }, channel_id)
+                    continue
+
+                if payload.get("type") == "reaction_remove":
+                    message_id = payload.get("message_id")
+                    emoji = payload.get("emoji")
+                    if message_id and emoji:
+                        success = await remove_reaction(db, uuid.UUID(message_id), user.id, emoji)
+                        if success:
+                            await manager.broadcast({
+                                "type": "reaction_remove",
+                                "message_id": message_id,
+                                "user_id": str(user.id),
+                                "username": user.username,
+                                "emoji": emoji
+                            }, channel_id)
                     continue
 
                 content = payload.get("content")
                 parent_id = payload.get("parent_id")
-                if content:
+                attachment_ids = payload.get("attachment_ids", [])
+
+                if content or attachment_ids:
                     # 4. Persistence
                     # Convert channel_id to UUID for DB
                     channel_uuid = uuid.UUID(channel_id)
                     
-                    message_data = MessageCreate(content=content, channel_id=channel_uuid, parent_id=parent_id)
+                    message_data = MessageCreate(
+                        content=content or "", 
+                        channel_id=channel_uuid, 
+                        parent_id=parent_id,
+                        attachment_ids=attachment_ids
+                    )
                     new_message, new_notifications = await create_message(db, message=message_data, user_id=user.id)
 
                     # 5. Broadcast Message
@@ -91,10 +142,19 @@ async def websocket_endpoint(
                         "channel_id": new_message.channel_id,
                         "user_id": new_message.user_id,
                         "parent_id": new_message.parent_id,
+                        "attachments": [
+                            {
+                                "id": att.id,
+                                "filename": att.filename,
+                                "file_path": att.file_path,
+                                "file_type": att.file_type
+                            } for att in new_message.attachments
+                        ],
                         "user": {
                             "username": user.username,
                             "email": user.email
-                        }
+                        },
+                        "reactions": []
                     }
                     await manager.broadcast(response, channel_id)
 
@@ -122,7 +182,7 @@ async def websocket_endpoint(
                 print(f"Error processing message: {e}")
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket, channel_id)
+        manager.disconnect(websocket, channel_id, str(user.id))
 
 
 @router.websocket("/ws/notifications/{token}")

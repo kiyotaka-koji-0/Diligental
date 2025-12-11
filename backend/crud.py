@@ -1,5 +1,7 @@
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 from models import User, Channel, Message, Notification
 import models
 import re
@@ -37,7 +39,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
 # Channels
 from models import Channel, Message
 from schemas import ChannelCreate, MessageCreate
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 import uuid
 
 async def get_channel_by_name(db: AsyncSession, name: str):
@@ -62,10 +64,15 @@ async def create_channel(db: AsyncSession, channel: ChannelCreate, owner_id: uui
     )
     db.add(db_channel)
     await db.commit()
-    await db.refresh(db_channel)
-    # Fix MissingGreenlet: manually set members to empty list to avoid async lazy load
-    db_channel.members = []
-    return db_channel
+    
+    # Eagerly load members relationship to avoid lazy load issues
+    from sqlalchemy import select
+    result = await db.execute(
+        select(Channel)
+        .options(selectinload(Channel.members).selectinload(models.ChannelMember.user))
+        .filter(Channel.id == db_channel.id)
+    )
+    return result.scalars().first()
 
 async def get_channels(db: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID, skip: int = 0, limit: int = 100):
     # Filter channels:
@@ -172,6 +179,15 @@ async def create_message(db: AsyncSession, message: MessageCreate, user_id: uuid
     db.add(db_message)
     await db.flush() # Ensure ID is generated
     
+    # Link Attachments
+    if message.attachment_ids:
+        from models import Attachment
+        stmt = select(Attachment).filter(Attachment.id.in_(message.attachment_ids))
+        result = await db.execute(stmt)
+        attachments = result.scalars().all()
+        for attachment in attachments:
+            attachment.message_id = db_message.id
+    
     new_notifications = []
 
     # Handle Notifications
@@ -209,7 +225,15 @@ async def create_message(db: AsyncSession, message: MessageCreate, user_id: uuid
             new_notifications.append(notif)
 
     await db.commit()
-    await db.refresh(db_message)
+    
+    # Reload message with attachments eagerly loaded to prevent greenlet error in WS
+    result = await db.execute(
+        select(Message)
+        .options(joinedload(Message.attachments))
+        .filter(Message.id == db_message.id)
+    )
+    db_message = result.unique().scalars().first()
+
     # Refresh notifications to get IDs
     for n in new_notifications:
         await db.refresh(n)
@@ -263,7 +287,11 @@ async def get_workspace_members(db: AsyncSession, workspace_id: uuid.UUID):
 from sqlalchemy.orm import joinedload
 
 async def get_messages(db: AsyncSession, channel_id: uuid.UUID, skip: int = 0, limit: int = 50, parent_id: uuid.UUID = None):
-    query = select(Message).options(joinedload(Message.user)).filter(Message.channel_id == channel_id)
+    query = select(Message).options(
+        joinedload(Message.user),
+        selectinload(Message.reactions).joinedload(models.Reaction.user),
+        selectinload(Message.attachments)
+    ).filter(Message.channel_id == channel_id)
     
     if parent_id:
         query = query.filter(Message.parent_id == parent_id)
@@ -317,3 +345,96 @@ async def mark_notification_read(db: AsyncSession, notification_id: uuid.UUID, u
         await db.commit()
         await db.refresh(notif)
     return notif
+
+# Thread functions
+async def get_thread_replies_count(db: AsyncSession, parent_id: uuid.UUID):
+    """Get count of replies for a thread"""
+    result = await db.execute(
+        select(func.count(Message.id)).filter(Message.parent_id == parent_id)
+    )
+    return result.scalar() or 0
+
+async def get_thread_messages(db: AsyncSession, parent_id: uuid.UUID, skip: int = 0, limit: int = 50):
+    """Get all replies in a thread with user info"""
+    result = await db.execute(
+        select(Message)
+        .options(
+            joinedload(Message.user),
+            selectinload(Message.reactions).joinedload(models.Reaction.user),
+            selectinload(Message.attachments)
+        )
+        .filter(Message.parent_id == parent_id)
+        .order_by(Message.created_at.asc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+async def get_message_with_user(db: AsyncSession, message_id: uuid.UUID):
+    """Get a single message with user info"""
+    result = await db.execute(
+        select(Message)
+        .options(
+            joinedload(Message.user),
+            selectinload(Message.reactions).joinedload(models.Reaction.user),
+            selectinload(Message.attachments)
+        )
+        .filter(Message.id == message_id)
+    )
+    return result.scalar_one_or_none()
+
+# Reaction functions
+async def add_reaction(db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID, emoji: str):
+    """Add a reaction to a message"""
+    from models import Reaction
+    
+    # Check if user already reacted with this emoji
+    existing = await db.execute(
+        select(Reaction).filter(
+            Reaction.message_id == message_id,
+            Reaction.user_id == user_id,
+            Reaction.emoji == emoji
+        )
+    )
+    if existing.scalar_one_or_none():
+        return None  # Already exists
+    
+    reaction = Reaction(
+        message_id=message_id,
+        user_id=user_id,
+        emoji=emoji
+    )
+    db.add(reaction)
+    await db.commit()
+    await db.refresh(reaction)
+    return reaction
+
+async def remove_reaction(db: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID, emoji: str):
+    """Remove a reaction from a message"""
+    from models import Reaction
+    
+    result = await db.execute(
+        select(Reaction).filter(
+            Reaction.message_id == message_id,
+            Reaction.user_id == user_id,
+            Reaction.emoji == emoji
+        )
+    )
+    reaction = result.scalar_one_or_none()
+    if reaction:
+        await db.delete(reaction)
+        await db.commit()
+        return True
+    return False
+
+async def get_message_reactions(db: AsyncSession, message_id: uuid.UUID):
+    """Get all reactions for a message with user info"""
+    from models import Reaction
+    
+    result = await db.execute(
+        select(Reaction)
+        .options(joinedload(Reaction.user))
+        .filter(Reaction.message_id == message_id)
+        .order_by(Reaction.created_at.asc())
+    )
+    return result.scalars().all()

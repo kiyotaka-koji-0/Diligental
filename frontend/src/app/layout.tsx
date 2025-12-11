@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
 import "@/styles/glassmorphism.css";
+import { ThemeProvider } from "@/contexts/theme-context";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -24,8 +25,10 @@ export default function RootLayout({
         className={`${outfit.variable} font-sans antialiased`}
         style={{ height: '100%', margin: 0, padding: 0 }}
       >
-        <div className="bg-grid-pattern" />
-        {children}
+        <ThemeProvider>
+          <div className="bg-grid-pattern" />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

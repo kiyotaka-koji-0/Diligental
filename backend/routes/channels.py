@@ -114,7 +114,14 @@ async def read_messages(
     if not member:
         raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
-    return await crud.get_messages(db, channel_id=channel_id, skip=skip, limit=limit, parent_id=parent_id)
+    messages = await crud.get_messages(db, channel_id=channel_id, skip=skip, limit=limit, parent_id=parent_id)
+    
+    # Add reply counts to messages (only for top-level messages)
+    if not parent_id:
+        for msg in messages:
+            msg.reply_count = await crud.get_thread_replies_count(db, msg.id)
+    
+    return messages
 
 @router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel(
@@ -169,4 +176,113 @@ async def read_channel(
          raise HTTPException(status_code=403, detail="Not a member of this workspace")
          
     return channel
+
+# Thread-specific endpoint
+@router.get("/{channel_id}/threads/{message_id}", response_model=dict)
+async def get_thread(
+    channel_id: uuid.UUID,
+    message_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Ensure channel exists
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+        
+    # Ensure user is member of the workspace
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Get parent message
+    parent_message = await crud.get_message_with_user(db, message_id)
+    if not parent_message or parent_message.channel_id != channel_id:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    # Get replies
+    replies = await crud.get_thread_messages(db, parent_id=message_id, skip=skip, limit=limit)
+    reply_count = await crud.get_thread_replies_count(db, message_id)
+    
+    return {
+        "parent": parent_message,
+        "replies": replies,
+        "reply_count": reply_count
+    }
+
+# Reaction endpoints
+@router.post("/{channel_id}/messages/{message_id}/reactions")
+async def add_reaction_to_message(
+    channel_id: uuid.UUID,
+    message_id: uuid.UUID,
+    emoji: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Verify channel access
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Verify message exists in this channel
+    message = await crud.get_message_with_user(db, message_id)
+    if not message or message.channel_id != channel_id:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    # Add reaction
+    reaction = await crud.add_reaction(db, message_id, current_user.id, emoji)
+    if not reaction:
+        raise HTTPException(status_code=400, detail="Reaction already exists")
+    
+    return {"message": "Reaction added", "reaction": reaction}
+
+@router.delete("/{channel_id}/messages/{message_id}/reactions/{emoji}")
+async def remove_reaction_from_message(
+    channel_id: uuid.UUID,
+    message_id: uuid.UUID,
+    emoji: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Verify channel access
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Remove reaction
+    success = await crud.remove_reaction(db, message_id, current_user.id, emoji)
+    if not success:
+        raise HTTPException(status_code=404, detail="Reaction not found")
+    
+    return {"message": "Reaction removed"}
+
+@router.get("/{channel_id}/messages/{message_id}/reactions")
+async def get_reactions_for_message(
+    channel_id: uuid.UUID,
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Verify channel access
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    reactions = await crud.get_message_reactions(db, message_id)
+    return reactions
+
 

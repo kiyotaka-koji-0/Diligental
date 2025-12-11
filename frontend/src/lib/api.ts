@@ -36,6 +36,22 @@ export interface Channel {
     members?: { user: User }[];
 }
 
+export interface Reaction {
+    id: string;
+    message_id: string;
+    user_id: string;
+    emoji: string;
+    created_at: string;
+    user?: User;
+}
+
+export interface Attachment {
+    id: string;
+    filename: string;
+    file_path: string;
+    file_type: string;
+}
+
 export interface Message {
     id: string;
     channel_id: string;
@@ -47,6 +63,9 @@ export interface Message {
     sender_id?: string;  // Fallback
     role?: string;       // Fallback
     parent_id?: string;
+    reply_count?: number; // For thread indicators
+    reactions?: Reaction[];
+    attachments?: Attachment[];
 }
 
 export type Notification = {
@@ -224,12 +243,47 @@ export const api = {
         }
 
         const token = localStorage.getItem('token');
+        
+        // Handle notification WebSocket differently
+        if (channelId === 'notifications') {
+            return `${wsRoot}/ws/notifications/${token}`;
+        }
+        
         return `${wsRoot}/ws/${channelId}/${token}`;
     },
 
     // Notifications
     getNotifications: () => api.get<Notification[]>('/notifications/'),
     markNotificationRead: (id: string) => api.post<Notification>(`/notifications/${id}/read`),
+
+    // File Upload
+    uploadFile: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        
+        const response = await fetch(`${API_URL}/upload`, {
+            method: 'POST',
+            headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+             const errorData = await response.json().catch(() => ({}));
+             throw new Error(errorData.detail || 'Upload failed');
+        }
+        
+        const data = await response.json();
+        return {
+            id: data.id,
+            filename: data.filename,
+            file_path: data.file_path,
+            file_type: data.file_type
+        } as Attachment;
+    },
 
     logout: () => {
         if (typeof window !== 'undefined') {

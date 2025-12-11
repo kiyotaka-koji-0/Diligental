@@ -50,11 +50,11 @@ export function ThreadView({
     }
 
     return (
-        <div className="flex flex-col h-full w-full md:w-96 absolute md:static inset-0 z-50 md:z-0 border-l border-white/10 bg-black/95 md:bg-black/40 backdrop-blur-md">
+        <div className="flex flex-col h-full w-full md:w-96 absolute md:static inset-0 z-50 md:z-0 border-l border-white/10 glass-premium">
             {/* Header */}
-            <div className="h-14 flex items-center justify-between px-4 border-b border-white/10 flex-none bg-black/20">
-                <h3 className="font-semibold text-white">Thread</h3>
-                <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 text-zinc-400 hover:text-white">
+            <div className="h-14 flex items-center justify-between px-4 border-b border-white/10 flex-none glass-light">
+                <h3 className="font-semibold text-gray-900 dark:text-white">Thread</h3>
+                <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white">
                     <X className="w-4 h-4" />
                 </Button>
             </div>
@@ -67,20 +67,20 @@ export function ThreadView({
                         <div className="flex gap-3">
                             <Avatar className="w-8 h-8 rounded-md mt-1">
                                 <AvatarImage src={parentMessage.sender?.avatar_url || parentMessage.user?.avatar_url} />
-                                <AvatarFallback className="rounded-md bg-white/10 text-white text-xs">
+                                <AvatarFallback className="rounded-md bg-white/10 text-gray-900 dark:text-white text-xs">
                                     {(parentMessage.sender?.username || parentMessage.user?.username || "?")[0].toUpperCase()}
                                 </AvatarFallback>
                             </Avatar>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-2">
-                                    <span className="font-medium text-white text-sm">
+                                    <span className="font-medium text-gray-900 dark:text-white text-sm">
                                         {parentMessage.sender?.username || parentMessage.user?.username || "Unknown"}
                                     </span>
-                                    <span className="text-[10px] text-neutral-500">
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
                                         {formatTime(parentMessage.created_at)}
                                     </span>
                                 </div>
-                                <p className="text-neutral-300 text-sm mt-0.5 leading-relaxed break-words">
+                                <p className="text-gray-700 dark:text-white text-sm mt-0.5 leading-relaxed break-words">
                                     {parentMessage.content}
                                 </p>
                             </div>
@@ -90,7 +90,7 @@ export function ThreadView({
                     {/* Replies */}
                     <div className="space-y-4">
                         {messages.length === 0 && (
-                            <p className="text-xs text-neutral-500 text-center italic">No replies yet</p>
+                            <p className="text-xs text-gray-500 dark:text-neutral-500 text-center italic">No replies yet</p>
                         )}
 
                         {messages.map((msg) => {
@@ -99,20 +99,20 @@ export function ThreadView({
                                 <div key={msg.id} className="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
                                     <Avatar className="w-8 h-8 rounded-md mt-1">
                                         <AvatarImage src={msg.sender?.avatar_url || msg.user?.avatar_url} />
-                                        <AvatarFallback className="rounded-md bg-white/10 text-white text-xs">
+                                        <AvatarFallback className="rounded-md bg-white/10 text-gray-900 dark:text-white text-xs">
                                             {(msg.sender?.username || msg.user?.username || "?")[0].toUpperCase()}
                                         </AvatarFallback>
                                     </Avatar>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-baseline gap-2">
-                                            <span className="font-medium text-white text-sm">
+                                            <span className="font-medium text-gray-900 dark:text-white text-sm">
                                                 {msg.sender?.username || msg.user?.username || "Unknown"}
                                             </span>
-                                            <span className="text-[10px] text-neutral-500">
+                                            <span className="text-[10px] text-gray-500 dark:text-gray-400">
                                                 {formatTime(msg.created_at)}
                                             </span>
                                         </div>
-                                        <p className="text-neutral-300 text-sm mt-0.5 leading-relaxed break-words">
+                                        <p className="text-gray-700 dark:text-white text-sm mt-0.5 leading-relaxed text-wrap">
                                             {msg.content}
                                         </p>
                                     </div>
@@ -124,7 +124,7 @@ export function ThreadView({
             </div>
 
             {/* Input */}
-            <div className="p-4 border-t border-white/10 bg-black/20 flex-none relative">
+            <div className="p-4 border-t border-white/10 glass-light flex-none relative">
                 {/* Thread Typing Indicator */}
                 {typingUsers.length > 0 && (
                     <div className="absolute top-[-20px] left-4 flex items-center gap-2 animate-in fade-in">
@@ -146,12 +146,12 @@ export function ThreadView({
                             onTyping()
                         }}
                         placeholder="Reply..."
-                        className="bg-white/5 border-white/10 text-white pr-10 focus:border-red-500/50"
+                        className="glass-medium text-gray-900 dark:text-white pr-10 focus:border-red-500/50"
                     />
                     <Button
                         type="submit"
                         size="icon"
-                        className="absolute right-1 top-1 h-7 w-7 text-neutral-400 hover:text-white"
+                        className="absolute right-1 top-1 h-7 w-7 text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
                         disabled={!inputValue.trim()}
                     >
                         <Send className="w-3.5 h-3.5" />

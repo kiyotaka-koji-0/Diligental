@@ -67,7 +67,7 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
 
     if (!localStream) {
         return (
-            <div className="flex flex-col h-full w-full bg-zinc-950 text-white relative">
+            <div className="flex flex-col h-full w-full glass-bg-3 text-white relative">
                 <div className="absolute top-4 left-4 md:hidden">
                     <MobileSidebar currentWorkspaceId={workspaceId} />
                 </div>
@@ -79,7 +79,7 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
                     </div>
                     <Button
                         onClick={joinVoice}
-                        className="bg-green-600 hover:bg-green-500 text-white px-8 py-6 rounded-full text-lg shadow-[0_0_30px_rgba(22,163,74,0.3)] transition-all hover:scale-105 disabled:opacity-50"
+                        className="glass-medium bg-green-600/80 hover:bg-green-500/80 text-white px-8 py-6 rounded-full text-lg glass-shadow-lg transition-all hover:scale-105 disabled:opacity-50"
                         disabled={!socket || socket.readyState !== WebSocket.OPEN}
                     >
                         <LogIn className="w-6 h-6 mr-3" />
@@ -91,7 +91,7 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
     }
 
     return (
-        <div className="h-full w-full bg-zinc-950 p-4 flex flex-col relative">
+        <div className="h-full w-full glass-bg-3 p-4 flex flex-col relative">
             <div className="md:hidden absolute top-4 left-4 z-50">
                 <MobileSidebar currentWorkspaceId={workspaceId} />
             </div>

@@ -4,9 +4,10 @@ import os
 import redis.asyncio as redis
 from contextlib import asynccontextmanager
 from database import engine, Base, async_session_maker
-from routes import auth, users, channels, ws, workspaces, notifications
+from routes import auth, users, channels, ws, workspaces, notifications, files
 from crud import get_user_by_username, create_user
 from schemas import UserCreate
+from fastapi.staticfiles import StaticFiles
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -15,6 +16,13 @@ async def lifespan(app: FastAPI):
     # Startup: Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    # Configure mappers to ensure all relationships are set up
+    from sqlalchemy.orm import configure_mappers
+    try:
+        configure_mappers()
+    except Exception as e:
+        print(f"Mapper configuration warning: {e}")
     
     # Seed Default Admin
     async with async_session_maker() as db:
@@ -64,6 +72,11 @@ app.include_router(channels.router)
 app.include_router(ws.router)
 app.include_router(workspaces.router)
 app.include_router(notifications.router)
+app.include_router(files.router)
+
+# Mount static files
+os.makedirs("uploads", exist_ok=True)
+app.mount("/static", StaticFiles(directory="uploads"), name="static")
 
 @app.get("/")
 async def root():

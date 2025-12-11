@@ -3,10 +3,11 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter, usePathname } from "next/navigation";
-import { ChevronDown, Hash, Plus, Settings, LogOut, Check, UserPlus, MoreVertical, Bell, Edit2, Trash2, Volume2 } from "lucide-react";
+import { ChevronDown, Hash, Plus, Settings, LogOut, Check, UserPlus, MoreVertical, Bell, Edit2, Trash2, Volume2, Moon, Sun } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import api, { Notification } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/contexts/theme-context";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import { RenameChannelDialog } from "@/components/channel/rename-channel-dialog";
 import { DeleteChannelDialog } from "@/components/channel/delete-channel-dialog";
@@ -207,10 +208,10 @@ export function MobileSidebar({ currentWorkspaceId }: { currentWorkspaceId: stri
         <Sheet>
             <SheetTrigger asChild>
                 <div className="md:hidden mr-2 p-2 rounded-lg hover:bg-white/10 cursor-pointer">
-                    <Menu className="w-6 h-6 text-white" />
+                    <Menu className="w-6 h-6 text-white dark:text-gray-100" />
                 </div>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 border-r border-white/10 bg-black/95 w-72 text-white border-none">
+            <SheetContent side="left" className="p-0 border-r border-white/10 dark:border-white/5 glass-bg-1 w-72 text-white border-none">
                 <SheetTitle className="sr-only">Navigation</SheetTitle>
                 <SheetDescription className="sr-only">Main Navigation</SheetDescription>
                 <SidebarContent
@@ -274,69 +275,60 @@ export function SidebarContent({
             {/* Header / Workspace Switcher */}
             <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
-                    <button className="h-16 hover:bg-white/5 transition-all duration-300 flex items-center px-4 font-bold text-white w-full border-b border-white/10 outline-none group relative overflow-hidden shrink-0">
-                        <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                        <div className="w-8 h-8 rounded-lg bg-linear-to-br from-red-600 to-red-900 flex items-center justify-center mr-3 shadow-lg border border-white/10 group-hover:scale-105 transition-transform">
-                            <span className="text-sm font-bold">{currentWorkspace?.name.charAt(0).toUpperCase()}</span>
-                        </div>
-                        <span className="truncate flex-1 text-left tracking-wide text-sm font-semibold group-hover:text-red-400 transition-colors relative z-10 font-outfit">
+                    <button className="h-14 hover:bg-white/10 dark:hover:bg-white/5 transition-colors flex items-center px-4 font-bold text-white w-full border-b border-white/10 dark:border-white/5 outline-none shrink-0">
+                        <span className="truncate flex-1 text-left text-lg font-semibold">
                             {currentWorkspace?.name || "Loading..."}
                         </span>
-                        <ChevronDown className="w-4 h-4 text-neutral-500 group-hover:text-red-400 transition-colors relative z-10" />
+                        <ChevronDown className="w-5 h-5 text-white/70" />
                     </button>
                 </DropdownMenu.Trigger>
 
                 <DropdownMenu.Portal>
                     <DropdownMenu.Content
-                        className="w-64 bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 rounded-xl shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7)] text-white z-50 animate-in fade-in zoom-in-95 duration-200 overflow-hidden ml-2 p-1"
+                        className="w-72 bg-white dark:bg-[#2b2d31] rounded-lg shadow-xl text-gray-900 dark:text-gray-100 z-50 animate-in fade-in zoom-in-95 duration-200 overflow-hidden p-2 border border-gray-200 dark:border-gray-700"
                         align="start"
                         sideOffset={5}
                     >
-                        <DropdownMenu.Label className="text-[10px] font-bold text-neutral-500 px-3 py-2 uppercase tracking-widest bg-white/5 rounded-t-lg -mx-1 -mt-1 mb-1">
-                            Switch Workspace
+                        <DropdownMenu.Label className="text-xs font-semibold text-gray-500 dark:text-gray-400 px-4 py-2 uppercase">
+                            Workspaces
                         </DropdownMenu.Label>
 
-                        <div className="max-h-64 overflow-y-auto custom-scrollbar p-1 space-y-0.5">
+                        <div className="max-h-64 overflow-y-auto">
                             {workspaces.map(ws => (
                                 <DropdownMenu.Item
                                     key={ws.id}
                                     onSelect={() => handleWorkspaceChange(ws.id)}
-                                    className="flex items-center px-3 py-2.5 text-sm rounded-lg hover:bg-white/5 outline-none cursor-pointer overflow-hidden group border border-transparent hover:border-white/5 transition-all relative"
+                                    className="flex items-center px-4 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 outline-none cursor-pointer"
                                 >
-                                    <div className={cn("w-2 h-8 absolute left-0 top-1/2 -translate-y-1/2 bg-red-500 rounded-r-full transition-transform duration-200", ws.id === currentWorkspaceId ? "translate-x-0" : "-translate-x-full")} />
-                                    <span className={cn("truncate flex-1 font-medium transition-colors ml-2", ws.id === currentWorkspaceId ? "text-white" : "text-neutral-400 group-hover:text-neutral-200")}>{ws.name}</span>
-                                    {ws.id === currentWorkspaceId && <Check className="w-3.5 h-3.5 ml-2 text-red-500 drop-shadow-[0_0_8px_rgba(220,38,38,0.5)]" />}
+                                    <span className={cn("truncate flex-1 font-medium", ws.id === currentWorkspaceId ? "text-gray-900 dark:text-white font-semibold" : "text-gray-700 dark:text-gray-300")}>{ws.name}</span>
+                                    {ws.id === currentWorkspaceId && <Check className="w-4 h-4 ml-2 text-green-600 dark:text-green-500" />}
                                 </DropdownMenu.Item>
                             ))}
                         </div>
 
-                        <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-2" />
+                        <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-gray-700 my-2" />
 
-                        <div className="p-1 space-y-0.5">
+                        <div className="space-y-1">
                             <DropdownMenu.Item
                                 onSelect={() => setIsCreateOpen(true)}
-                                className="flex items-center px-3 py-2 text-sm rounded-lg hover:bg-white/5 outline-none cursor-pointer text-neutral-400 hover:text-white transition-colors group"
+                                className="flex items-center px-4 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 outline-none cursor-pointer text-gray-700 dark:text-gray-300"
                             >
-                                <div className="p-1 rounded bg-white/5 mr-2 group-hover:bg-white/10 transition-colors border border-white/5">
-                                    <Plus className="w-3.5 h-3.5" />
-                                </div>
+                                <Plus className="w-4 h-4 mr-2" />
                                 Create Workspace
                             </DropdownMenu.Item>
 
                             <JoinWorkspaceDialog />
                         </div>
 
-                        <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-2" />
+                        <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-gray-700 my-2" />
 
-                        <div className="p-1">
+                        <div>
                             <InviteUserDialog workspaceId={currentWorkspaceId} trigger={
                                 <DropdownMenu.Item
                                     onSelect={(e) => e.preventDefault()}
-                                    className="flex items-center px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 outline-none cursor-pointer text-neutral-400 hover:text-red-400 transition-colors group"
+                                    className="flex items-center px-4 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 outline-none cursor-pointer text-gray-700 dark:text-gray-300"
                                 >
-                                    <div className="p-1 rounded bg-white/5 mr-2 group-hover:bg-red-500/20 transition-colors border border-white/5 group-hover:border-red-500/20">
-                                        <UserPlus className="w-3.5 h-3.5" />
-                                    </div>
+                                    <UserPlus className="w-4 h-4 mr-2" />
                                     Invite People
                                 </DropdownMenu.Item>
                             } />
@@ -346,14 +338,14 @@ export function SidebarContent({
             </DropdownMenu.Root>
 
             {/* Channels Section */}
-            <div className="flex-1 overflow-y-auto py-6 px-3 space-y-6 custom-scrollbar scroll-smooth">
+            <div className="flex-1 overflow-y-auto py-4 px-3">
                 {/* Channel Group */}
                 <div>
                     {/* Channels Header with Context Menu */}
                     <ContextMenu>
                         <ContextMenuTrigger asChild>
-                            <div className="px-3 mb-2 flex items-center justify-between group cursor-default hover:bg-white/5 rounded-md transition-colors py-1">
-                                <span className="text-neutral-500 font-bold text-[10px] uppercase tracking-widest group-hover:text-neutral-300 transition-colors">
+                            <div className="px-2 mb-1 flex items-center justify-between group cursor-default hover:bg-white/10 dark:hover:bg-white/5 rounded transition-colors py-1">
+                                <span className="text-white/70 dark:text-gray-400 font-semibold text-sm">
                                     Channels
                                 </span>
                                 <button
@@ -361,18 +353,18 @@ export function SidebarContent({
                                         e.stopPropagation();
                                         setIsCreateChannelOpen(true);
                                     }}
-                                    className="text-neutral-600 hover:text-white transition-all transform hover:scale-110 opacity-0 group-hover:opacity-100 duration-200"
+                                    className="text-white/50 dark:text-gray-500 hover:text-white dark:hover:text-gray-300 transition-all opacity-0 group-hover:opacity-100"
                                 >
-                                    <Plus className="w-3.5 h-3.5" />
+                                    <Plus className="w-4 h-4" />
                                 </button>
                             </div>
                         </ContextMenuTrigger>
-                        <ContextMenuContent className="bg-[#0a0a0a]/95 backdrop-blur-md border border-white/10 text-neutral-200 rounded-xl shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-100">
+                        <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
                             <ContextMenuItem
-                                className="flex items-center px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white outline-none text-xs font-medium"
+                                className="flex items-center px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer outline-none text-sm"
                                 onSelect={() => setIsCreateChannelOpen(true)}
                             >
-                                <Plus className="w-3.5 h-3.5 mr-2 text-neutral-400" />
+                                <Plus className="w-4 h-4 mr-2" />
                                 Create Channel
                             </ContextMenuItem>
                         </ContextMenuContent>
@@ -392,50 +384,45 @@ export function SidebarContent({
                                             <Link
                                                 href={`/client/${currentWorkspaceId}/${channel.id}`}
                                                 className={cn(
-                                                    "flex items-center px-3 py-2 rounded-lg transition-all duration-200 group relative overflow-hidden",
+                                                    "flex items-center px-2 py-1 rounded transition-colors group",
                                                     isActive
-                                                        ? "bg-linear-to-r from-red-600/10 to-transparent text-red-50"
-                                                        : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                                                        ? "bg-[#1164a3] dark:bg-[#404249] text-white"
+                                                        : "text-white/70 dark:text-gray-400 hover:bg-white/10 dark:hover:bg-white/5"
                                                 )}
                                             >
-                                                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-red-500 rounded-r-full shadow-[0_0_8px_#ef4444]" />}
-
                                                 {channel.type === 'voice' ? (
-                                                    <Volume2 className={cn("w-4 h-4 mr-3 transition-colors shrink-0", isActive ? "text-red-500" : "opacity-40 group-hover:opacity-70")} />
+                                                    <Volume2 className="w-4 h-4 mr-2" />
                                                 ) : (
-                                                    <Hash className={cn("w-4 h-4 mr-3 transition-colors shrink-0", isActive ? "text-red-500" : "opacity-40 group-hover:opacity-70")} />
+                                                    <Hash className="w-4 h-4 mr-2" />
                                                 )}
-                                                <span className={cn("truncate font-medium text-[14px]", isActive ? "text-white font-semibold" : hasUnread ? "text-neutral-200 font-medium" : "")}>
+                                                <span className={cn("truncate font-normal text-[15px]", isActive && "font-semibold")}>
                                                     {channel.name}
                                                 </span>
 
                                                 {hasUnread && (
-                                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white group-hover:bg-red-400 transition-colors shadow-[0_0_5px_rgba(255,255,255,0.5)]" />
+                                                    <div className="ml-auto w-2 h-2 rounded-full bg-white" />
                                                 )}
-
-                                                {/* Hover Glow Effect */}
-                                                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                                             </Link>
                                         </ContextMenuTrigger>
-                                        <ContextMenuContent className="bg-[#0a0a0a]/95 backdrop-blur-md border border-white/10 text-neutral-200 rounded-xl shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-100">
+                                        <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
                                             <ContextMenuItem
-                                                className="flex items-center px-2 py-2 rounded-lg hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white outline-none text-xs font-medium"
+                                                className="flex items-center px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer outline-none text-sm"
                                                 onSelect={() => {
                                                     setChannelToRename(channel);
                                                     setIsRenameDialogOpen(true);
                                                 }}
                                             >
-                                                <Edit2 className="w-3.5 h-3.5 mr-2 text-neutral-400" />
+                                                <Edit2 className="w-4 h-4 mr-2" />
                                                 Edit Channel
                                             </ContextMenuItem>
                                             <ContextMenuItem
-                                                className="flex items-center px-2 py-2 rounded-lg hover:bg-red-500/10 text-red-500 hover:text-red-400 cursor-pointer focus:bg-red-500/10 focus:text-red-400 outline-none mt-0.5 text-xs font-medium border border-transparent focus:border-red-500/20"
+                                                className="flex items-center px-3 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 cursor-pointer outline-none text-sm"
                                                 onSelect={() => {
                                                     setChannelToDelete(channel);
                                                     setIsDeleteDialogOpen(true);
                                                 }}
                                             >
-                                                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                                <Trash2 className="w-4 h-4 mr-2" />
                                                 Delete Channel
                                             </ContextMenuItem>
                                         </ContextMenuContent>
@@ -446,9 +433,9 @@ export function SidebarContent({
                 </div>
 
                 {/* Direct Messages Group */}
-                <div>
-                    <div className="px-3 mb-2 flex items-center justify-between group cursor-default hover:bg-white/5 rounded-md transition-colors py-1">
-                        <span className="text-neutral-500 font-bold text-[10px] uppercase tracking-widest group-hover:text-neutral-300 transition-colors">
+                <div className="mt-6">
+                    <div className="px-2 mb-1 flex items-center justify-between group cursor-default hover:bg-white/10 dark:hover:bg-white/5 rounded transition-colors py-1">
+                        <span className="text-white/70 dark:text-gray-400 font-semibold text-sm">
                             Direct Messages
                         </span>
                         <button
@@ -456,9 +443,9 @@ export function SidebarContent({
                                 e.stopPropagation();
                                 setIsCreateDMOpen(true);
                             }}
-                            className="text-neutral-600 hover:text-white transition-all transform hover:scale-110 opacity-0 group-hover:opacity-100 duration-200"
+                            className="text-white/50 dark:text-gray-500 hover:text-white dark:hover:text-gray-300 transition-all opacity-0 group-hover:opacity-100"
                         >
-                            <Plus className="w-3.5 h-3.5" />
+                            <Plus className="w-4 h-4" />
                         </button>
                     </div>
 
@@ -468,7 +455,7 @@ export function SidebarContent({
                             .map((channel, idx) => {
                                 const isActive = pathname?.includes(`/${channel.id}`);
                                 let displayName = channel.name;
-                                let statusColor = "bg-neutral-500";
+                                let statusColor = "bg-gray-400";
 
                                 if (channel.type === 'dm' && channel.members && currentUser) {
                                     const otherMember = channel.members.find((m: any) => m.user.id !== currentUser.id);
@@ -485,22 +472,20 @@ export function SidebarContent({
                                         key={channel.id}
                                         href={`/client/${currentWorkspaceId}/${channel.id}`}
                                         className={cn(
-                                            "flex items-center px-3 py-2 rounded-lg transition-all duration-200 group relative overflow-hidden",
+                                            "flex items-center px-2 py-1 rounded transition-colors group",
                                             isActive
-                                                ? "bg-linear-to-r from-red-600/10 to-transparent text-red-50"
-                                                : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                                                ? "bg-[#1164a3] dark:bg-[#404249] text-white"
+                                                : "text-white/70 dark:text-gray-400 hover:bg-white/10 dark:hover:bg-white/5"
                                         )}
                                     >
-                                        {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-red-500 rounded-r-full shadow-[0_0_8px_#ef4444]" />}
-
-                                        <div className="relative mr-3 shrink-0">
-                                            <div className="w-4 h-4 rounded-full bg-neutral-700 flex items-center justify-center text-[8px] font-bold text-neutral-300">
+                                        <div className="relative mr-2 shrink-0">
+                                            <div className="w-6 h-6 rounded bg-gray-600 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-white">
                                                 {displayName.charAt(0).toUpperCase()}
                                             </div>
-                                            <div className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[#0a0a0a]", statusColor)} />
+                                            <div className={cn("absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#3f0e40] dark:border-[#2b2d31]", statusColor)} />
                                         </div>
 
-                                        <span className={cn("truncate font-medium text-[14px]", isActive ? "text-white font-semibold" : "")}>
+                                        <span className={cn("truncate font-normal text-[15px]", isActive && "font-semibold")}>
                                             {displayName}
                                         </span>
                                     </Link>
@@ -511,23 +496,17 @@ export function SidebarContent({
             </div>
 
             {/* Footer / User Profile & Notifications */}
-            <div className="p-3 border-t border-white/10 bg-black/40 backdrop-blur-md flex items-center gap-2">
+            <div className="p-3 border-t border-white/10 dark:border-white/5 flex items-center gap-2">
                 <DropdownMenu.Root>
                     <DropdownMenu.Trigger asChild>
-                        <div className="flex-1 flex items-center p-2 rounded-xl hover:bg-white/5 transition-all duration-200 cursor-pointer group border border-transparent hover:border-white/5 relative overflow-hidden min-w-0">
-                            {/* Gradient glow on hover */}
-                            <div className="absolute inset-0 bg-linear-to-r from-red-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                            <div className="w-9 h-9 rounded-full bg-linear-to-tr from-neutral-800 to-neutral-700 border border-white/10 mr-3 flex items-center justify-center text-xs font-bold text-white shadow-inner shrink-0 relative">
+                        <div className="flex-1 flex items-center p-2 rounded hover:bg-white/10 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0">
+                            <div className="w-8 h-8 rounded bg-gray-600 dark:bg-gray-700 mr-2 flex items-center justify-center text-sm font-semibold text-white shrink-0 relative">
                                 {currentUser?.username?.charAt(0).toUpperCase() || "?"}
-                                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-[#1a1b26] rounded-full shadow-[0_0_4px_#10b981]" />
+                                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-[#3f0e40] dark:border-[#2b2d31] rounded-full" />
                             </div>
-                            <div className="flex flex-col overflow-hidden relative z-10 min-w-0">
-                                <span className="text-xs font-bold text-white truncate group-hover:text-red-300 transition-colors">
+                            <div className="flex flex-col overflow-hidden min-w-0">
+                                <span className="text-sm font-semibold text-white truncate">
                                     {currentUser?.username || "Guest"}
-                                </span>
-                                <span className="text-[10px] text-neutral-500 truncate group-hover:text-neutral-400">
-                                    Online
                                 </span>
                             </div>
                         </div>
@@ -535,58 +514,61 @@ export function SidebarContent({
 
                     <DropdownMenu.Portal>
                         <DropdownMenu.Content
-                            className="w-56 bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 rounded-xl shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7)] text-white z-50 animate-in slide-in-from-bottom-2 duration-200 p-1 mb-2 ml-2"
+                            className="w-56 bg-white dark:bg-[#2b2d31] rounded-lg shadow-xl text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 z-50 p-2 mb-2"
                             side="right"
                             align="end"
                         >
-                            <div className="px-3 py-2 border-b border-white/5 mb-1">
-                                <p className="text-xs font-bold text-white">{currentUser?.username}</p>
-                                <p className="text-[10px] text-neutral-500 truncate">{currentUser?.email}</p>
+                            <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 mb-2">
+                                <p className="text-sm font-semibold">{currentUser?.username}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{currentUser?.email}</p>
                             </div>
 
-                            <DropdownMenu.Item className="flex items-center px-2 py-2 text-xs font-medium rounded-lg hover:bg-white/5 outline-none cursor-pointer text-neutral-300 hover:text-white transition-colors">
-                                <Settings className="w-3.5 h-3.5 mr-2" />
+                            <DropdownMenu.Item className="flex items-center px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 outline-none cursor-pointer">
+                                <Settings className="w-4 h-4 mr-2" />
                                 Preferences
                             </DropdownMenu.Item>
 
-                            <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
+                            <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-gray-700 my-2" />
 
                             <DropdownMenu.Item
                                 onSelect={handleLogout}
-                                className="flex items-center px-2 py-2 text-xs font-medium rounded-lg hover:bg-red-500/10 outline-none cursor-pointer text-red-500 hover:text-red-400 transition-colors"
+                                className="flex items-center px-3 py-2 text-sm rounded hover:bg-red-50 dark:hover:bg-red-900/20 outline-none cursor-pointer text-red-600 dark:text-red-400"
                             >
-                                <LogOut className="w-3.5 h-3.5 mr-2" />
+                                <LogOut className="w-4 h-4 mr-2" />
                                 Log Out
                             </DropdownMenu.Item>
                         </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                 </DropdownMenu.Root>
 
+                {/* Theme Toggle */}
+                <ThemeToggle />
+
                 {/* Notifications Bell */}
                 <DropdownMenu.Root>
                     <DropdownMenu.Trigger asChild>
-                        <button className="relative w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/5 text-neutral-400 hover:text-white transition-colors outline-none shrink-0">
+                        <button className="relative w-9 h-9 flex items-center justify-center rounded hover:bg-white/10 dark:hover:bg-white/5 text-white transition-colors outline-none shrink-0">
                             <Bell className="w-5 h-5" />
                             {unreadCount > 0 && (
-                                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#0a0a0a]" />
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
                             )}
                         </button>
                     </DropdownMenu.Trigger>
 
                     <DropdownMenu.Portal>
                         <DropdownMenu.Content
-                            className="w-80 bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 rounded-xl shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7)] text-white z-50 animate-in slide-in-from-bottom-2 duration-200 p-0 mb-2 ml-2 overflow-hidden flex flex-col"
+                            className="w-80 bg-white dark:bg-[#2b2d31] rounded-lg shadow-xl text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 z-50 p-0 mb-2 overflow-hidden flex flex-col"
                             side="right"
                             align="end"
                             sideOffset={10}
                         >
-                            <div className="px-4 py-3 border-b border-white/10 bg-white/5">
-                                <h4 className="font-bold text-sm">Notifications</h4>
+                            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                                <h4 className="font-semibold text-sm">Notifications</h4>
                             </div>
 
-                            <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                            <div className="max-h-80 overflow-y-auto">
                                 {notifications.length === 0 ? (
-                                    <div className="p-8 text-center text-xs text-neutral-400 italic">
+                                    <div className="p-8 text-center text-sm text-gray-400">
                                         No notifications yet
                                     </div>
                                 ) : (
@@ -595,28 +577,21 @@ export function SidebarContent({
                                             key={notif.id}
                                             onClick={() => handleMarkRead(notif.id)}
                                             className={cn(
-                                                "p-4 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors relative",
-                                                !notif.is_read && "bg-red-500/5 hover:bg-red-500/10"
+                                                "p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors",
+                                                !notif.is_read && "bg-blue-50 dark:bg-blue-900/20"
                                             )}
                                         >
                                             <div className="flex gap-3">
-                                                <div className="mt-1">
-                                                    {notif.type === 'mention' ? (
-                                                        <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_5px_red]" />
-                                                    ) : (
-                                                        <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_5px_blue]" />
-                                                    )}
-                                                </div>
-                                                <div className="flex-1 space-y-1">
-                                                    <p className={cn("text-xs leading-relaxed", !notif.is_read ? "text-white font-medium" : "text-neutral-400")}>
+                                                <div className="flex-1">
+                                                    <p className={cn("text-sm", !notif.is_read ? "font-medium" : "text-gray-600 dark:text-gray-400")}>
                                                         {notif.content}
                                                     </p>
-                                                    <p className="text-[10px] text-neutral-600">
+                                                    <p className="text-xs text-gray-400 mt-1">
                                                         {new Date(notif.created_at).toLocaleTimeString()}
                                                     </p>
                                                 </div>
                                                 {!notif.is_read && (
-                                                    <div className="w-2 h-2 bg-red-500 rounded-full shrink-0 mt-1.5" />
+                                                    <div className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1" />
                                                 )}
                                             </div>
                                         </div>
@@ -674,4 +649,23 @@ export function SidebarContent({
             }
         </div >
     )
+}
+
+// Theme Toggle Component
+function ThemeToggle() {
+    const { theme, toggleTheme } = useTheme();
+    
+    return (
+        <button
+            onClick={toggleTheme}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-white/10 dark:hover:bg-white/5 text-white transition-colors outline-none shrink-0"
+            aria-label="Toggle theme"
+        >
+            {theme === 'light' ? (
+                <Moon className="w-5 h-5" />
+            ) : (
+                <Sun className="w-5 h-5" />
+            )}
+        </button>
+    );
 }

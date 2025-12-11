@@ -17,7 +17,7 @@ const GlassButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
             default: "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20",
             outline: "border border-white/20 bg-transparent hover:bg-white/5 text-white",
             ghost: "hover:bg-white/10 text-white/80 hover:text-white",
-            glass: "glass hover:bg-white/10 text-white border-white/10 hover:border-white/20",
+            glass: "glass-light hover:bg-white/10 text-white hover:border-white/20",
             danger: "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20",
         }
 
