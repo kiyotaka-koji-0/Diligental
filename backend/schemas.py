@@ -13,6 +13,14 @@ class UserCreate(UserBase):
     password: str
     role: Optional[str] = "user"
 
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    tailnet_ip: Optional[str] = None
+    role: Optional[str] = None
+
 class UserOut(UserBase):
     id: uuid.UUID
     role: str
@@ -93,6 +101,10 @@ class AttachmentOut(AttachmentBase):
         from_attributes = True
 
 # Message Schemas
+class MentionedUser(BaseModel):
+    id: uuid.UUID
+    username: str
+
 class MessageBase(BaseModel):
     content: str
     channel_id: uuid.UUID
@@ -100,6 +112,7 @@ class MessageBase(BaseModel):
 
 class MessageCreate(MessageBase):
     attachment_ids: Optional[list[uuid.UUID]] = []
+    mentioned_user_ids: Optional[list[uuid.UUID]] = []  # For @ mentions
 
 class Message(MessageBase):
     id: uuid.UUID
@@ -110,6 +123,7 @@ class Message(MessageBase):
     reply_count: Optional[int] = 0  # For thread preview
     reactions: Optional[list[ReactionOut]] = []
     attachments: Optional[list[AttachmentOut]] = []
+    mentioned_users: Optional[list[MentionedUser]] = []  # Users mentioned in message
 
     class Config:
         from_attributes = True

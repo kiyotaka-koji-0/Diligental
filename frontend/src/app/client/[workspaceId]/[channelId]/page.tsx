@@ -12,6 +12,8 @@ import { ThreadView } from "@/components/chat/thread-view";
 import { CallOverlay } from "@/components/chat/call-overlay";
 import { VoiceChannel } from "@/components/chat/voice-channel";
 import { MobileSidebar } from "@/components/layout/sidebar";
+import { RichTextEditor } from "@/components/chat/rich-text-editor";
+import { RichTextRenderer } from "@/components/chat/rich-text-renderer";
 import { useWebRTC } from "@/hooks/use-webrtc";
 
 export default function ChannelPage({
@@ -25,6 +27,7 @@ export default function ChannelPage({
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [channel, setChannel] = useState<Channel | null>(null);
+    const [channelMembers, setChannelMembers] = useState<User[]>([]);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -173,8 +176,33 @@ export default function ChannelPage({
                 const ch = await api.getChannel(channelId);
                 setChannel(ch);
 
+                // Extract channel members for mention suggestions
+                const hasChannelMembers = ch.members && Array.isArray(ch.members) && ch.members.length > 0;
+                
+                if (hasChannelMembers && Array.isArray(ch.members)) {
+                    const members = ch.members.map((m: any) => ({
+                        id: m.user?.id || m.user_id,
+                        username: m.user?.username || "Unknown",
+                        email: m.user?.email || ""
+                    }));
+                    setChannelMembers(members);
+                } else {
+                    // For regular channels, fetch workspace members as fallback for mentions
+                    try {
+                        const workspaceMembers = await api.getWorkspaceMembers(workspaceId);
+                        const members = workspaceMembers.map((m: any) => ({
+                            id: m.user?.id || m.user_id,
+                            username: m.user?.username || "Unknown",
+                            email: m.user?.email || ""
+                        }));
+                        setChannelMembers(members);
+                    } catch (err) {
+                        console.error("Error fetching workspace members:", err);
+                    }
+                }
+
                 // Extract target user ID for DM channels
-                if (ch.type === 'dm' && ch.members) {
+                if (ch.type === 'dm' && ch.members && Array.isArray(ch.members)) {
                     const otherMember = ch.members.find((m: any) => m.user.id !== user.id);
                     if (otherMember) {
                         setTargetUserId(otherMember.user.id);
@@ -706,7 +734,11 @@ export default function ChannelPage({
                                             ? "glass-medium bg-red-500/20! border-red-500/30! text-gray-900 dark:text-white rounded-tr-sm"
                                             : "glass-light text-gray-900 dark:text-white rounded-tl-sm hover:bg-white/10 dark:hover:bg-white/5"
                                             }`}>
-                                            {msg.content}
+                                            <RichTextRenderer 
+                                                content={msg.content}
+                                                mentions={msg.mentioned_users || []}
+                                                className="break-words"
+                                            />
 
                                             {/* Attachments */}
                                             {msg.attachments && msg.attachments.length > 0 && (
@@ -854,7 +886,7 @@ export default function ChannelPage({
 
                             <form
                                 onSubmit={handleSendMessage}
-                                className="relative flex items-center gap-2 p-2 rounded-2xl glass-premium glass-shadow-lg focus-within:border-red-500/30 focus-within:ring-1 focus-within:ring-red-500/20 transition-all duration-300"
+                                className="relative flex flex-col gap-2 p-4 rounded-2xl glass-premium glass-shadow-lg focus-within:border-red-500/30 focus-within:ring-1 focus-within:ring-red-500/20 transition-all duration-300"
                             >
                                 <input 
                                     type="file" 
@@ -862,53 +894,63 @@ export default function ChannelPage({
                                     className="hidden" 
                                     onChange={handleFileUpload}
                                 />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    disabled={isUploading}
-                                    className="h-10 w-10 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-                                >
-                                    <Paperclip className="h-5 w-5" />
-                                </Button>
 
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-10 w-10 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-                                >
-                                    <Monitor className="h-5 w-5" />
-                                </Button>
-
-                                <Input
+                                <RichTextEditor
                                     value={newMessage}
-                                    onChange={(e) => {
-                                        setNewMessage(e.target.value);
-                                        handleTyping();
-                                    }}
+                                    onChange={setNewMessage}
+                                    onSubmit={handleSendMessage}
+                                    onTyping={handleTyping}
                                     placeholder={`Message #${channel?.name || "channel"}...`}
-                                    className="flex-1 bg-transparent border-none focus-visible:ring-0 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-zinc-400 h-10 px-2"
-                                />
-
-                                <div className="flex items-center gap-1 pr-1">
-                                    {newMessage.trim() && (
+                                    users={channelMembers}
+                                    isUploading={isUploading}
+                                >
+                                    <div className="flex items-center gap-1 mt-2">
                                         <Button
-                                            type="submit"
+                                            type="button"
+                                            variant="ghost"
                                             size="icon"
-                                            className="h-9 w-9 bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-lg shadow-red-900/20 transition-all duration-300 animate-in zoom-in-50"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={isUploading}
+                                            className="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg"
+                                            title="Attach file"
                                         >
-                                            <Send className="h-4 w-4" />
+                                            <Paperclip className="h-4 w-4" />
                                         </Button>
-                                    )}
-                                </div>
+
+                                        {newMessage.trim() && (
+                                            <Button
+                                                type="submit"
+                                                size="icon"
+                                                className="h-8 w-8 bg-red-600 hover:bg-red-500 text-white rounded-lg shadow-lg shadow-red-900/20 transition-all duration-300 animate-in zoom-in-50 ml-auto"
+                                                title="Send (Ctrl+Enter)"
+                                            >
+                                                <Send className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </RichTextEditor>
+
+                                {/* Attachments Preview */}
+                                {attachments.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {attachments.map(att => (
+                                            <div 
+                                                key={att.id} 
+                                                className="relative group p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors"
+                                            >
+                                                <span className="text-xs text-gray-400">{att.filename.substring(0, 20)}...</span>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => removeAttachment(att.id)}
+                                                    className="absolute -top-2 -right-2 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <X className="w-3 h-3 text-white" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </form>
-                            <div className="text-center mt-2">
-                                <span className="text-[10px] text-zinc-600">
-                                    Press <kbd className="font-sans px-1 py-0.5 rounded bg-white/5 border border-white/10 text-zinc-500">Enter</kbd> to send
-                                </span>
-                            </div>
                         </div>
                     </div>
                 </div>

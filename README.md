@@ -113,18 +113,14 @@ This will:
 
 #### 3️⃣ Configure Environment Variables
 
-Create a `.env` file in the `backend` directory:
+The repository ships with a shared `env.example` at the root. Copy it next to the backend so the FastAPI app can read it:
 ```bash
-cd backend
-cp .env.example .env  # If .env.example exists
+cp env.example backend/.env
 ```
 
-Edit `.env` with your configuration:
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/diligental
-REDIS_URL=redis://localhost:6379/0
-JWT_SECRET=your-super-secret-jwt-key-change-this
-```
+Edit `backend/.env` and replace the placeholder values with your own credentials. The template already exposes `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, and `REFRESH_TOKEN_EXPIRE_DAYS` so you can tune the JWT lifecycle and database connections for your environment.
+
+Since `.env` is now ignored from version control, you can keep secrets on your machine without leaking them. If you need environment overrides for the frontend, create a `frontend/.env.local` and set `NEXT_PUBLIC_API_URL` (the frontend will derive its WebSocket endpoints automatically).
 
 #### 4️⃣ Start Required Services
 
@@ -183,6 +179,9 @@ cd Diligental
 ```
 
 #### 2️⃣ Start All Services
+
+The Compose file already wires the API, Redis, and Postgres credentials that match the `env.example` defaults. If you change any values (for example to match a different Postgres password) update `env.example` and the service definitions or use a `.env` file with `docker compose --env-file`.
+
 ```bash
 docker-compose up -d
 ```

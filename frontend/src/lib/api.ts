@@ -52,6 +52,11 @@ export interface Attachment {
     file_type: string;
 }
 
+export interface MentionedUser {
+    id: string;
+    username: string;
+}
+
 export interface Message {
     id: string;
     channel_id: string;
@@ -66,6 +71,7 @@ export interface Message {
     reply_count?: number; // For thread indicators
     reactions?: Reaction[];
     attachments?: Attachment[];
+    mentioned_users?: MentionedUser[];  // Users mentioned in this message
 }
 
 export type Notification = {

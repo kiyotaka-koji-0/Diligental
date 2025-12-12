@@ -246,3 +246,455 @@ body>div:first-child {
     @apply bg-background text-foreground;
   }
 }
+
+/* PWA Mobile Optimizations */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Prevent zoom on input focus on mobile */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Improve touch targets on mobile */
+@media (max-width: 768px) {
+  button,
+  a,
+  [role="button"],
+  [role="link"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Disable text selection on UI elements */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Optimize scrolling performance */
+.scrollable {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Status bar styling for iOS */
+@media (prefers-color-scheme: dark) {
+  meta[name="theme-color"] {
+    content: "#0f172a";
+  }
+}
+
+/* Rich Text Message Styling */
+.prose-sm {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.prose-sm strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.prose-sm em {
+  font-style: italic;
+  color: inherit;
+}
+
+.prose-sm code {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 0.85em;
+}
+
+.prose-sm a {
+  color: #3b82f6;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.prose-sm a:hover {
+  color: #1d4ed8;
+}
+
+.dark .prose-sm a {
+  color: #60a5fa;
+}
+
+.dark .prose-sm a:hover {
+  color: #93c5fd;
+}
+
+/* Message Bubbles with Text Formatting */
+.message-bubble {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.message-bubble strong {
+  font-weight: 600;
+  display: inline;
+}
+
+.message-bubble em {
+  font-style: italic;
+  display: inline;
+}
+
+/* Mention Styling */
+.mention {
+  font-weight: 500;
+  color: #2563eb;
+  background-color: rgba(37, 99, 235, 0.1);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mention:hover {
+  background-color: rgba(37, 99, 235, 0.2);
+  color: #1d4ed8;
+}
+
+.dark .mention {
+  color: #60a5fa;
+  background-color: rgba(96, 165, 250, 0.15);
+}
+
+.dark .mention:hover {
+  background-color: rgba(96, 165, 250, 0.25);
+  color: #93c5fd;
+}
+
+/* Code Block Styling */
+.message-bubble code {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 0.85em;
+  color: #ef4444;
+}
+
+.dark .message-bubble code {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #ff6b6b;
+}
+
+.message-bubble pre {
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+}
+
+.dark .message-bubble pre {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Blockquote Styling */
+.message-bubble blockquote {
+  border-left: 3px solid #3b82f6;
+  padding-left: 0.75rem;
+  color: inherit;
+  opacity: 0.8;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.dark .message-bubble blockquote {
+  border-left-color: #60a5fa;
+}
+
+/* List Styling */
+.message-bubble ul,
+.message-bubble ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.message-bubble li {
+  margin: 0.25rem 0;
+}
+
+/* Heading Styling */
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3,
+.message-bubble h4,
+.message-bubble h5,
+.message-bubble h6 {
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem 0;
+  line-height: 1.3;
+}
+
+.message-bubble h1 {
+  font-size: 1.25rem;
+}
+
+.message-bubble h2 {
+  font-size: 1.1rem;
+}
+
+.message-bubble h3 {
+  font-size: 1rem;
+}
+
+/* Horizontal Rule */
+.message-bubble hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 0.5rem 0;
+}
+
+.dark .message-bubble hr {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Rich Text Editor Styling */
+.rich-editor {
+  transition: all 0.2s;
+}
+
+.rich-editor:focus-within {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.rich-editor textarea {
+  scroll-behavior: smooth;
+}
+
+/* Mention Suggestion Dropdown */
+.mention-suggestions {
+  animation: slideUp 0.15s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Formatting Toolbar Buttons */
+.format-button {
+  transition: all 0.15s;
+}
+
+.format-button:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.dark .format-button:hover {
+  background-color: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+/* Rich Text Formatting Styles */
+/* Bold text styling */
+.prose-sm strong,
+strong {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Italic text styling */
+.prose-sm em,
+em {
+  font-style: italic;
+  opacity: 0.95;
+}
+
+/* Code inline styling */
+.prose-sm code,
+code:not(pre code) {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: "Monaco", "Courier New", monospace;
+  font-size: 0.875em;
+}
+
+.dark code:not(pre code) {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+/* Code block styling */
+pre {
+  background: linear-gradient(135deg, #111827 0%, #1a202c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+pre code {
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Link styling */
+a {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.dark a {
+  color: #60a5fa;
+}
+
+.dark a:hover {
+  color: #93c5fd;
+}
+
+/* Mention/tag styling */
+.mention {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.1) 100%);
+  color: #2563eb;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mention:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(37, 99, 235, 0.2) 100%);
+  color: #1d4ed8;
+}
+
+.dark .mention {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.dark .mention:hover {
+  background: rgba(59, 130, 246, 0.3);
+  color: #bfdbfe;
+}
+
+/* Blockquote styling */
+blockquote {
+  border-left: 4px solid rgba(59, 130, 246, 0.5);
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  color: #4b5563;
+  font-style: italic;
+}
+
+.dark blockquote {
+  border-left-color: rgba(96, 165, 250, 0.5);
+  color: #9ca3af;
+}
+
+/* List styling */
+ul, ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+li {
+  margin: 0.25rem 0;
+}
+
+/* Heading styling in messages */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.125rem; }
+h3 { font-size: 1rem; }
+
+/* Horizontal rule */
+hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0.5rem 0;
+}
+
+/* Message bubble with formatted text */
+.message-bubble {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* Mention autocomplete menu */
+.mention-autocomplete {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background: rgba(30, 31, 34, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+  max-height: 12rem;
+  overflow-y: auto;
+  backdrop-filter: blur(10px);
+}
+
+.mention-autocomplete-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mention-autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.mention-autocomplete-item:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.mention-autocomplete-item.selected {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+}
+

@@ -17,6 +17,15 @@ async def get_user_by_email(db: AsyncSession, email: str):
     result = await db.execute(select(User).filter(User.email == email))
     return result.scalars().first()
 
+async def get_user_by_id(db: AsyncSession, user_id: str):
+    import uuid
+    try:
+        user_uuid = uuid.UUID(user_id)
+        result = await db.execute(select(User).filter(User.id == user_uuid))
+        return result.scalars().first()
+    except ValueError:
+        return None
+
 async def create_user(db: AsyncSession, user: UserCreate):
     hashed_password = get_password_hash(user.password)
     db_user = User(
@@ -190,49 +199,64 @@ async def create_message(db: AsyncSession, message: MessageCreate, user_id: uuid
     
     new_notifications = []
 
-    # Handle Notifications
-    # 1. Mentions
-    mentions = re.findall(r"@(\w+)", message.content)
-    # Deduplicate mentions
-    mentions = list(set(mentions))
+    # Handle Notifications and Mentions
+    # 1. Use mentioned_user_ids from message if provided (frontend parsed mentions)
+    mentioned_user_ids = message.mentioned_user_ids or []
     
-    for username in mentions:
-        user = await get_user_by_username(db, username)
-        if user and user.id != user_id:
-            notif = models.Notification(
-                user_id=user.id,
-                content=f"You were mentioned by a user",
-                type="mention",
-                related_id=db_message.id
-            )
-            db.add(notif)
-            new_notifications.append(notif)
+    # 2. If no explicit mentions, parse from content (fallback)
+    if not mentioned_user_ids:
+        mentions = re.findall(r"@(\w+)", message.content)
+        # Deduplicate mentions
+        mentions = list(set(mentions))
+        
+        for username in mentions:
+            user = await get_user_by_username(db, username)
+            if user and user.id != user_id:
+                mentioned_user_ids.append(user.id)
+    
+    # Add mentioned users to message relationship and create notifications
+    if mentioned_user_ids:
+        from sqlalchemy import insert
+        for mentioned_id in mentioned_user_ids:
+            if mentioned_id != user_id:  # Don't mention yourself
+                stmt = insert(models.message_mentions).values(message_id=db_message.id, user_id=mentioned_id)
+                await db.execute(stmt)
+                
+                notif = models.Notification(
+                    user_id=mentioned_id,
+                    content=f"You were mentioned in a message",
+                    type="mention",
+                    related_id=db_message.id
+                )
+                db.add(notif)
+                new_notifications.append(notif)
             
-    # 2. Replies
+    # 3. Replies
     if message.parent_id:
         parent_msg = await db.get(Message, message.parent_id)
         if parent_msg and parent_msg.user_id != user_id:
-            # Check if we already notified via mention to avoid double notify?
-            # For simplicity, create separate notification or check logic.
-            # Let's just create it.
-            notif = models.Notification(
-                user_id=parent_msg.user_id,
-                content="New reply to your message",
-                type="reply",
-                related_id=db_message.id
-            )
-            db.add(notif)
-            new_notifications.append(notif)
+            # Check if we already notified via mention to avoid double notify
+            already_mentioned = parent_msg.user_id in mentioned_user_ids
+            if not already_mentioned:
+                notif = models.Notification(
+                    user_id=parent_msg.user_id,
+                    content="New reply to your message",
+                    type="reply",
+                    related_id=db_message.id
+                )
+                db.add(notif)
+                new_notifications.append(notif)
 
     await db.commit()
     
-    # Reload message with attachments eagerly loaded to prevent greenlet error in WS
+    # Reload message with attachments and mentions eagerly loaded to prevent greenlet error in WS
     result = await db.execute(
         select(Message)
-        .options(joinedload(Message.attachments))
+        .options(selectinload(Message.attachments))
+        .options(selectinload(Message.mentioned_users))
         .filter(Message.id == db_message.id)
     )
-    db_message = result.unique().scalars().first()
+    db_message = result.scalars().unique().first()
 
     # Refresh notifications to get IDs
     for n in new_notifications:

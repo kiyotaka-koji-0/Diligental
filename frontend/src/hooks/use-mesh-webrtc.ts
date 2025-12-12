@@ -124,9 +124,10 @@ export const useMeshWebRTC = ({ user, channelId, socket }: MeshWebRTCConfig) => 
             setForceUpdate(n => n + 1);
         };
 
-        pc.onremovetrack = (event) => {
+        // Handle track removal (using property setter instead of onremovetrack)
+        pc.addEventListener('removetrack', (event) => {
             console.log(`[Mesh] Track removed from ${targetUsername}`);
-        };
+        });
 
         pc.onconnectionstatechange = () => {
             console.log(`[Mesh] Connection state change for ${targetUsername}: ${pc.connectionState}`);

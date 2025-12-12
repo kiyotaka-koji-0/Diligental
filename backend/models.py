@@ -1,11 +1,19 @@
 import enum
 import secrets
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, Enum, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, Enum, Text, Table
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
+
+# Association table for message mentions (many-to-many)
+message_mentions = Table(
+    'message_mentions',
+    Base.metadata,
+    Column('message_id', UUID(as_uuid=True), ForeignKey('messages.id', ondelete='CASCADE'), primary_key=True),
+    Column('user_id', UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+)
 
 class User(Base):
     __tablename__ = "users"
@@ -95,6 +103,7 @@ class Message(Base):
     parent = relationship("Message", back_populates="replies", remote_side=[parent_id])
     reactions = relationship("Reaction", back_populates="message", cascade="all, delete-orphan")
     attachments = relationship("Attachment", back_populates="message", cascade="all, delete-orphan")
+    mentioned_users = relationship("User", secondary=message_mentions, lazy="selectin", viewonly=True) # Users mentioned in this message
 
 class Attachment(Base):
     __tablename__ = "attachments"
