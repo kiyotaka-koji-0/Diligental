@@ -1,0 +1,84 @@
+name: Pull Request Statistics
+
+on:
+  pull_request:
+    types: [opened, closed]
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-pr-stats:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Calculate PR statistics
+        id: stats
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get PR statistics using GitHub API
+          # Note: Limits to 1000 PRs for performance. For repos with more PRs, consider pagination.
+          REPO="${{ github.repository }}"
+          
+          # Get total open PRs
+          OPEN_PRS=$(gh pr list --state open --json number --jq 'length')
+          echo "open_prs=$OPEN_PRS" >> $GITHUB_OUTPUT
+          
+          # Get total closed PRs
+          CLOSED_PRS=$(gh pr list --state closed --json number --jq 'length' --limit 1000)
+          echo "closed_prs=$CLOSED_PRS" >> $GITHUB_OUTPUT
+          
+          # Get total merged PRs
+          MERGED_PRS=$(gh pr list --state merged --json number --jq 'length' --limit 1000)
+          echo "merged_prs=$MERGED_PRS" >> $GITHUB_OUTPUT
+          
+          # Calculate total PRs
+          TOTAL_PRS=$((OPEN_PRS + CLOSED_PRS))
+          echo "total_prs=$TOTAL_PRS" >> $GITHUB_OUTPUT
+          
+          # Create statistics markdown file
+          echo "## Pull Request Statistics" > pr-stats.md
+          echo "" >> pr-stats.md
+          echo "- **Total PRs**: $TOTAL_PRS" >> pr-stats.md
+          echo "- **Open PRs**: $OPEN_PRS" >> pr-stats.md
+          echo "- **Closed PRs**: $CLOSED_PRS" >> pr-stats.md
+          echo "- **Merged PRs**: $MERGED_PRS" >> pr-stats.md
+          echo "" >> pr-stats.md
+          
+          # Get top contributors by PRs
+          echo "## Top Contributors by Pull Requests" >> pr-stats.md
+          echo "" >> pr-stats.md
+          gh pr list --state all --json author --jq '.[] | .author.login' --limit 1000 | \
+            sort | uniq -c | sort -rn | head -10 | while read -r count author; do
+            echo "- **$author**: $count PRs" >> pr-stats.md
+          done
+          
+          # Get recent PR activity (last 30 days)
+          echo "" >> pr-stats.md
+          echo "## Recent Pull Request Activity (Last 30 Days)" >> pr-stats.md
+          echo "" >> pr-stats.md
+          RECENT_PRS=$(gh pr list --state all --json createdAt --jq \
+            "[.[] | select(.createdAt | fromdateiso8601 > (now - 2592000))] | length" --limit 1000)
+          echo "- PRs opened: $RECENT_PRS" >> pr-stats.md
+          
+      - name: Display statistics
+        run: |
+          echo "Total PRs: ${{ steps.stats.outputs.total_prs }}"
+          echo "Open PRs: ${{ steps.stats.outputs.open_prs }}"
+          echo "Merged PRs: ${{ steps.stats.outputs.merged_prs }}"
+          cat pr-stats.md
+          
+      - name: Create stats artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-statistics
+          path: pr-stats.md
+          retention-days: 90
