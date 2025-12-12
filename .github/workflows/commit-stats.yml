@@ -1,0 +1,68 @@
+name: Commit Statistics
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-commit-stats:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+          
+      - name: Calculate commit statistics
+        id: stats
+        run: |
+          # Get total commit count
+          TOTAL_COMMITS=$(git rev-list --count HEAD)
+          echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
+          
+          # Get commit count by author
+          echo "## Top Contributors by Commits" > commit-stats.md
+          echo "" >> commit-stats.md
+          git shortlog -sn --all --no-merges | head -10 | while read -r line; do
+            commits=$(echo $line | awk '{print $1}')
+            author=$(echo $line | cut -d' ' -f2-)
+            echo "- **$author**: $commits commits" >> commit-stats.md
+          done
+          
+          # Get recent activity (last 30 days)
+          echo "" >> commit-stats.md
+          echo "## Recent Activity (Last 30 Days)" >> commit-stats.md
+          echo "" >> commit-stats.md
+          RECENT_COMMITS=$(git rev-list --count --since="30 days ago" HEAD)
+          echo "- Total commits: $RECENT_COMMITS" >> commit-stats.md
+          
+          # Get commits per month for last 6 months
+          echo "" >> commit-stats.md
+          echo "## Commits Per Month (Last 6 Months)" >> commit-stats.md
+          echo "" >> commit-stats.md
+          for i in {0..5}; do
+            month=$(date -d "$i months ago" +%Y-%m)
+            month_name=$(date -d "$i months ago" +"%B %Y")
+            count=$(git rev-list --count --since="$month-01" --until="$(date -d "$month-01 +1 month" +%Y-%m-%d)" HEAD)
+            echo "- **$month_name**: $count commits" >> commit-stats.md
+          done
+          
+      - name: Display statistics
+        run: |
+          echo "Total commits: ${{ steps.stats.outputs.total_commits }}"
+          cat commit-stats.md
+          
+      - name: Create stats artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: commit-statistics
+          path: commit-stats.md
+          retention-days: 90

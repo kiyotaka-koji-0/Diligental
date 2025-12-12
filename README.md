@@ -308,6 +308,18 @@ Diligental/
 
 ---
 
+## 🤖 Bot Contributors
+
+We appreciate the amazing contributions from our automated helpers! These bots help keep our project organized, secure, and running smoothly:
+
+- **[dependabot](https://github.com/apps/dependabot)** - Keeps our dependencies up-to-date and secure
+- **[github-actions[bot]](https://github.com/apps/github-actions)** - Automates our CI/CD workflows and statistics
+- **[copilot](https://github.com/features/copilot)** - Assists with code generation and improvements
+
+Special thanks to all automated tools that help maintain code quality, security, and project health! 🎉
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Here's how you can help:
