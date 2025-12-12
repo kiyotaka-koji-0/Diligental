@@ -45,6 +45,7 @@ jobs:
           echo "- Total commits: $RECENT_COMMITS" >> commit-stats.md
           
           # Get commits per month for last 6 months
+          # Note: Uses GNU date syntax (available on GitHub Ubuntu runners)
           echo "" >> commit-stats.md
           echo "## Commits Per Month (Last 6 Months)" >> commit-stats.md
           echo "" >> commit-stats.md

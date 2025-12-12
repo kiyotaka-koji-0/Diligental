@@ -2,7 +2,7 @@ name: Pull Request Statistics
 
 on:
   pull_request:
-    types: [opened, closed, merged]
+    types: [opened, closed]
   schedule:
     # Run daily at midnight UTC
     - cron: '0 0 * * *'
@@ -25,6 +25,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Get PR statistics using GitHub API
+          # Note: Limits to 1000 PRs for performance. For repos with more PRs, consider pagination.
           REPO="${{ github.repository }}"
           
           # Get total open PRs
