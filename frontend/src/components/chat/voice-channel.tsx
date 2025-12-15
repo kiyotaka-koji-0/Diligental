@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, LogIn } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, LogIn, Maximize2, Minimize2, MonitorUp, CircleDot } from "lucide-react";
 import { useMeshWebRTC } from '@/hooks/use-mesh-webrtc';
 import { User } from '@/lib/api';
 
@@ -21,16 +21,62 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
         leaveVoice,
         handleSignal,
         localStream,
-        peers
+        peers,
+        toggleAudio,
+        toggleVideo,
+        isAudioEnabled,
+        isVideoEnabled,
+        startScreenShare,
+        stopScreenShare,
+        isScreenSharing,
+        startRecording,
+        stopRecording,
+        isRecording
     } = useMeshWebRTC({ user, channelId, socket });
 
     const localVideoRef = useRef<HTMLVideoElement>(null);
+    const [isFullScreen, setIsFullScreen] = React.useState(false);
+    const [zoomScale, setZoomScale] = React.useState(1);
+    const pinchStartDistanceRef = useRef<number | null>(null);
+    const baseScaleRef = useRef(1);
 
     useEffect(() => {
         if (localVideoRef.current && localStream) {
             localVideoRef.current.srcObject = localStream;
         }
     }, [localStream]);
+
+    const getDistance = (touches: React.TouchList) => {
+        if (touches.length < 2) return 0;
+        const [t1, t2] = [touches[0], touches[1]];
+        const dx = t1.clientX - t2.clientX;
+        const dy = t1.clientY - t2.clientY;
+        return Math.hypot(dx, dy);
+    };
+
+    const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length === 2) {
+            pinchStartDistanceRef.current = getDistance(e.touches);
+            baseScaleRef.current = zoomScale;
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length === 2 && pinchStartDistanceRef.current) {
+            e.preventDefault();
+            const currentDistance = getDistance(e.touches);
+            if (currentDistance === 0) return;
+            const rawScale = (baseScaleRef.current * currentDistance) / pinchStartDistanceRef.current;
+            const clamped = Math.min(3, Math.max(0.5, rawScale));
+            setZoomScale(clamped);
+        }
+    };
+
+    const handleTouchEnd = () => {
+        pinchStartDistanceRef.current = null;
+        baseScaleRef.current = zoomScale;
+        if (zoomScale < 0.5) setZoomScale(0.5);
+    };
 
     // ... (rest of useEffects)
 
@@ -67,8 +113,8 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
 
     if (!localStream) {
         return (
-            <div className="flex flex-col h-full w-full glass-bg-3 text-white relative">
-                <div className="absolute top-4 left-4 md:hidden">
+            <div className={`flex flex-col w-full glass-bg-3 text-white relative ${isFullScreen ? 'fixed inset-0 z-50 h-screen' : 'h-full'}`}>
+                <div className="absolute top-4 left-4 md:hidden z-50">
                     <MobileSidebar currentWorkspaceId={workspaceId} />
                 </div>
 
@@ -91,13 +137,20 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
     }
 
     return (
-        <div className="h-full w-full glass-bg-3 p-4 flex flex-col relative">
-            <div className="md:hidden absolute top-4 left-4 z-50">
+        <div 
+            className={`glass-bg-3 p-4 flex flex-col relative ${isFullScreen ? 'fixed inset-0 z-50 bg-zinc-900' : 'h-full w-full'}`}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+        >
+            <div className={`${isFullScreen ? '' : 'md:hidden'} absolute top-4 left-4 z-50`}>
                 <MobileSidebar currentWorkspaceId={workspaceId} />
             </div>
 
             {/* Grid of Videos */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr mt-8 md:mt-0">
+            <div className={`flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr ${isFullScreen ? 'mt-0' : 'mt-8 md:mt-0'}`}
+                style={{ transform: `scale(${zoomScale})`, transformOrigin: "center center", touchAction: "none" }}
+            >
 
                 {/* Local User */}
                 <div className="relative bg-zinc-900 rounded-xl overflow-hidden border border-white/10 shadow-lg group">
@@ -106,8 +159,13 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
                         autoPlay
                         playsInline
                         muted
-                        className="w-full h-full object-cover mirror"
+                        className={`w-full h-full object-cover mirror ${!isVideoEnabled ? 'hidden' : ''}`}
                     />
+                    {!isVideoEnabled && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
+                            <VideoOff className="h-8 w-8 text-zinc-500" />
+                        </div>
+                    )}
                     <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur px-3 py-1 rounded-full text-sm font-medium">
                         {user?.username || "You"} (Me)
                     </div>
@@ -121,7 +179,43 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
             </div>
 
             {/* Controls Bar */}
-            <div className="h-24 flex items-center justify-center gap-6">
+            <div className="h-24 flex items-center justify-center gap-4">
+                <Button
+                    onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                    variant="ghost"
+                    size="icon"
+                    className={`h-12 w-12 rounded-full transition-colors ${isScreenSharing ? "bg-amber-500/30 text-amber-200 hover:bg-amber-500/40" : "text-white hover:bg-white/20"}`}
+                >
+                    <MonitorUp className="h-5 w-5" />
+                </Button>
+                <Button
+                    onClick={toggleAudio}
+                    variant="ghost"
+                    size="icon"
+                    className={`h-12 w-12 rounded-full transition-colors ${isAudioEnabled
+                        ? "text-white hover:bg-white/20"
+                        : "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-400"}`}
+                >
+                    {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+                </Button>
+                <Button
+                    onClick={toggleVideo}
+                    variant="ghost"
+                    size="icon"
+                    className={`h-12 w-12 rounded-full transition-colors ${isVideoEnabled
+                        ? "text-white hover:bg-white/20"
+                        : "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-400"}`}
+                >
+                    {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                </Button>
+                <Button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    variant="ghost"
+                    size="icon"
+                    className={`h-12 w-12 rounded-full transition-colors ${isRecording ? "bg-red-500/30 text-red-100 hover:bg-red-500/40" : "text-white hover:bg-white/20"}`}
+                >
+                    <CircleDot className="h-5 w-5" />
+                </Button>
                 <Button
                     onClick={leaveVoice}
                     variant="destructive"
@@ -129,6 +223,14 @@ export function VoiceChannel({ channelId, workspaceId, user, socket }: VoiceChan
                     className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-500 shadow-[0_0_20px_rgba(220,38,38,0.4)]"
                 >
                     <PhoneOff className="h-6 w-6" />
+                </Button>
+                <Button
+                    onClick={() => setIsFullScreen(!isFullScreen)}
+                    variant="ghost"
+                    size="icon"
+                    className="h-12 w-12 text-white hover:bg-white/20 rounded-full"
+                >
+                    {isFullScreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
                 </Button>
             </div>
         </div>

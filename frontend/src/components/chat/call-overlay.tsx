@@ -3,7 +3,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Maximize2, Minimize2 } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Maximize2, Minimize2, MonitorUp, CircleDot } from "lucide-react";
 
 interface CallOverlayProps {
     localStream: MediaStream | null;
@@ -17,6 +17,12 @@ interface CallOverlayProps {
     toggleVideo?: () => void;
     isAudioEnabled?: boolean;
     isVideoEnabled?: boolean;
+    startScreenShare?: () => void;
+    stopScreenShare?: () => void;
+    isScreenSharing?: boolean;
+    startRecording?: () => void;
+    stopRecording?: () => void;
+    isRecording?: boolean;
 }
 
 export function CallOverlay({
@@ -30,11 +36,20 @@ export function CallOverlay({
     toggleAudio,
     toggleVideo,
     isAudioEnabled = true,
-    isVideoEnabled = true
+    isVideoEnabled = true,
+    startScreenShare,
+    stopScreenShare,
+    isScreenSharing = false,
+    startRecording,
+    stopRecording,
+    isRecording = false,
 }: CallOverlayProps) {
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const [isFullScreen, setIsFullScreen] = React.useState(false);
+    const [zoomScale, setZoomScale] = React.useState(1);
+    const pinchStartDistanceRef = useRef<number | null>(null);
+    const baseScaleRef = useRef(1);
 
     useEffect(() => {
         if (localVideoRef.current && localStream) {
@@ -47,6 +62,38 @@ export function CallOverlay({
             remoteVideoRef.current.srcObject = remoteStream;
         }
     }, [remoteStream, isActive, isFullScreen]);
+
+    const getDistance = (touches: React.TouchList) => {
+        if (touches.length < 2) return 0;
+        const [t1, t2] = [touches[0], touches[1]];
+        const dx = t1.clientX - t2.clientX;
+        const dy = t1.clientY - t2.clientY;
+        return Math.hypot(dx, dy);
+    };
+
+    const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length === 2) {
+            pinchStartDistanceRef.current = getDistance(e.touches);
+            baseScaleRef.current = zoomScale;
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length === 2 && pinchStartDistanceRef.current) {
+            e.preventDefault();
+            const currentDistance = getDistance(e.touches);
+            if (currentDistance === 0) return;
+            const rawScale = (baseScaleRef.current * currentDistance) / pinchStartDistanceRef.current;
+            const clamped = Math.min(3, Math.max(0.5, rawScale));
+            setZoomScale(clamped);
+        }
+    };
+
+    const handleTouchEnd = () => {
+        pinchStartDistanceRef.current = null;
+        baseScaleRef.current = zoomScale;
+        if (zoomScale < 0.5) setZoomScale(0.5);
+    };
 
     if (!isActive && !isIncoming) return null;
 
@@ -85,13 +132,21 @@ export function CallOverlay({
 
             {/* Active Call View */}
             {isActive && (
-                <div className="relative w-full h-full bg-zinc-900">
-                    <video
-                        ref={remoteVideoRef}
-                        autoPlay
-                        playsInline
-                        className="w-full h-full object-cover"
-                    />
+                <div
+                    className="relative w-full h-full bg-zinc-900"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                >
+                    <div className="w-full h-full overflow-hidden">
+                        <video
+                            ref={remoteVideoRef}
+                            autoPlay
+                            playsInline
+                            className="w-full h-full object-cover"
+                            style={{ transform: `scale(${zoomScale})`, transformOrigin: "center center", touchAction: "none" }}
+                        />
+                    </div>
 
                     {/* Local Video (PiP) */}
                     <div className={`absolute transition-all duration-300 ${isFullScreen
@@ -115,6 +170,14 @@ export function CallOverlay({
                     {/* Controls */}
                     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 p-3 rounded-full bg-black/60 backdrop-blur border border-white/10">
                         <Button
+                            onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                            variant="ghost"
+                            size="icon"
+                            className={`h-12 w-12 rounded-full transition-colors ${isScreenSharing ? "bg-amber-500/30 text-amber-200 hover:bg-amber-500/40" : "text-white hover:bg-white/20"}`}
+                        >
+                            <MonitorUp className="h-5 w-5" />
+                        </Button>
+                        <Button
                             onClick={toggleAudio}
                             variant="ghost"
                             size="icon"
@@ -133,6 +196,14 @@ export function CallOverlay({
                                 : "bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:text-red-400"}`}
                         >
                             {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                        </Button>
+                        <Button
+                            onClick={isRecording ? stopRecording : startRecording}
+                            variant="ghost"
+                            size="icon"
+                            className={`h-12 w-12 rounded-full transition-colors ${isRecording ? "bg-red-500/30 text-red-100 hover:bg-red-500/40" : "text-white hover:bg-white/20"}`}
+                        >
+                            <CircleDot className="h-5 w-5" />
                         </Button>
                         <Button
                             onClick={onEndCall}

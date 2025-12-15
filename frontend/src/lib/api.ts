@@ -37,6 +37,16 @@ export interface Channel {
     description?: string;
     type?: 'public' | 'private' | 'dm' | 'voice';
     members?: { user: User }[];
+    category_id?: string | null;
+    position?: number;
+}
+
+export interface Category {
+    id: string;
+    workspace_id: string;
+    name: string;
+    position: number;
+    created_at: string;
 }
 
 export interface Reaction {
@@ -186,6 +196,7 @@ export const api = {
     get: <T>(endpoint: string, options?: FetchOptions) => baseApiFetch<T>('GET', endpoint, undefined, options),
     post: <T>(endpoint: string, data?: any, options?: FetchOptions) => baseApiFetch<T>('POST', endpoint, data, options),
     put: <T>(endpoint: string, data?: any, options?: FetchOptions) => baseApiFetch<T>('PUT', endpoint, data, options),
+    patch: <T>(endpoint: string, data?: any, options?: FetchOptions) => baseApiFetch<T>('PATCH', endpoint, data, options),
     delete: <T>(endpoint: string, options?: FetchOptions) => baseApiFetch<T>('DELETE', endpoint, undefined, options),
 
     // Helper to get headers with token
@@ -225,11 +236,18 @@ export const api = {
 
     // Channels
     getChannels: (workspaceId: string) => baseApiFetch<Channel[]>('GET', '/channels/', { workspace_id: workspaceId }),
-    createChannel: (workspaceId: string, name: string, description?: string, type: 'public' | 'private' | 'voice' = 'public') => api.post<Channel>('/channels/', { workspace_id: workspaceId, name, description, type }),
+    createChannel: (workspaceId: string, name: string, description?: string, type: 'public' | 'private' | 'voice' = 'public', categoryId?: string) => api.post<Channel>('/channels/', { workspace_id: workspaceId, name, description, type, category_id: categoryId }),
     createDM: (workspaceId: string, targetUserId: string) => api.post<Channel>('/channels/dm', { workspace_id: workspaceId, target_user_id: targetUserId }),
     deleteChannel: (channelId: string) => baseApiFetch<void>('DELETE', `/channels/${channelId}`, undefined, { headers: {} }).catch(e => { if (e.message !== "Unexpected end of JSON input") throw e; }),
     updateChannel: (channelId: string, name: string) => baseApiFetch<Channel>('PATCH', `/channels/${channelId}`, { name }),
+    updateChannelCategory: (workspaceId: string, channelId: string, categoryId: string | null, position?: number) => api.patch<Channel>(`/workspaces/${workspaceId}/channels/${channelId}`, { category_id: categoryId, position }),
     getChannel: (channelId: string) => api.get<Channel>(`/channels/${channelId}`),
+
+    // Categories
+    getCategories: (workspaceId: string) => api.get<Category[]>(`/workspaces/${workspaceId}/categories`),
+    createCategory: (workspaceId: string, name: string) => api.post<Category>(`/workspaces/${workspaceId}/categories`, { name }),
+    updateCategory: (categoryId: string, name: string, position?: number) => api.patch<Category>(`/categories/${categoryId}`, { name, position }),
+    deleteCategory: (categoryId: string) => api.delete(`/categories/${categoryId}`),
 
     // Messages
     getMessages: (channelId: string, parentId?: string) => baseApiFetch<Message[]>('GET', `/channels/${channelId}/messages`, { parent_id: parentId }),

@@ -20,13 +20,15 @@ interface CreateChannelDialogProps {
     onOpenChange: (open: boolean) => void
     workspaceId: string
     onSuccess?: () => void
+    defaultCategoryId?: string | null
 }
 
 export function CreateChannelDialog({
     open,
     onOpenChange,
     workspaceId,
-    onSuccess
+    onSuccess,
+    defaultCategoryId = null
 }: CreateChannelDialogProps) {
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
@@ -43,7 +45,12 @@ export function CreateChannelDialog({
         setError("")
 
         try {
-            await api.createChannel(workspaceId, name, description, type)
+            const newChannel = await api.createChannel(workspaceId, name, description, type)
+            
+            // If a category is specified, move the channel to that category
+            if (defaultCategoryId && newChannel.id) {
+                await api.updateChannelCategory(workspaceId, newChannel.id, defaultCategoryId)
+            }
 
             // Reset form
             setName("")

@@ -50,6 +50,10 @@ class ChannelBase(BaseModel):
 class ChannelCreate(ChannelBase):
     workspace_id: uuid.UUID
 
+class ChannelUpdate(BaseModel):
+    category_id: Optional[uuid.UUID] = None
+    position: Optional[int] = None
+
 class DMChannelCreate(BaseModel):
     workspace_id: uuid.UUID
     target_user_id: uuid.UUID
@@ -68,7 +72,25 @@ class Channel(ChannelBase):
     type: str = "public"
     owner_id: Optional[uuid.UUID] = None
     workspace_id: uuid.UUID
+    category_id: Optional[uuid.UUID] = None
+    position: Optional[int] = None
     members: Optional[list[ChannelMemberOut]] = [] # Populate for DMs or filtered lists
+
+    class Config:
+        from_attributes = True
+
+# Category Schemas
+class CategoryBase(BaseModel):
+    name: str
+
+class CategoryCreate(BaseModel):
+    name: str
+
+class Category(CategoryBase):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    position: int
+    created_at: datetime
 
     class Config:
         from_attributes = True

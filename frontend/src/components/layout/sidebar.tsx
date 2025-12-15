@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { useParams, useRouter, usePathname } from "next/navigation";
-import { ChevronDown, Hash, Plus, Settings, LogOut, Check, UserPlus, MoreVertical, Bell, Edit2, Trash2, Volume2, Moon, Sun } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { ChevronDown, Hash, Plus, Settings, LogOut, Check, UserPlus, Bell, Edit2, Trash2, Volume2, Moon, Sun, ChevronRight, Folder, FolderOpen } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import api, { Notification } from "@/lib/api";
+import api, { Notification, Category } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/contexts/theme-context";
 import { StatusSelector } from "@/components/ui/status-selector";
@@ -17,6 +17,7 @@ import { JoinWorkspaceDialog } from "@/components/workspace/join-workspace-dialo
 import { InviteUserDialog } from "@/components/workspace/invite-user-dialog";
 import { CreateChannelDialog } from "@/components/channel/create-channel-dialog";
 import { CreateDMDialog } from "@/components/channel/create-dm-dialog";
+import { CreateCategoryDialog } from "@/components/channel/create-category-dialog";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
 import {
@@ -24,6 +25,7 @@ import {
     ContextMenuContent,
     ContextMenuItem,
     ContextMenuTrigger,
+    ContextMenuPortal,
 } from "@/components/ui/context-menu"
 
 interface Workspace {
@@ -37,6 +39,8 @@ interface Channel {
     workspace_id: string;
     type?: 'public' | 'private' | 'dm' | 'voice';
     members?: { user: User }[];
+    category_id?: string | null;
+    position?: number;
 }
 
 interface User {
@@ -51,10 +55,10 @@ interface User {
 
 function useSidebarLogic(currentWorkspaceId: string) {
     const router = useRouter();
-    const pathname = usePathname();
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
     const [channels, setChannels] = useState<Channel[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const ws = useRef<WebSocket | null>(null);
@@ -68,15 +72,21 @@ function useSidebarLogic(currentWorkspaceId: string) {
 
     const fetchData = async () => {
         try {
-            const [wsList, channelsList, userProfile] = await Promise.all([
+            const [wsList, channelsList, userProfile, categoriesList] = await Promise.all([
                 api.getWorkspaces(),
                 api.getChannels(currentWorkspaceId),
-                api.getMe()
+                api.getMe(),
+                api.getCategories(currentWorkspaceId).catch((err) => {
+                    console.error("Failed to fetch categories:", err);
+                    return [];
+                })
             ]);
 
             setWorkspaces(wsList as Workspace[]);
             setChannels(channelsList as Channel[]);
             setCurrentUser(userProfile as User);
+            setCategories(categoriesList as Category[]);
+            console.log("Fetched categories:", categoriesList);
 
             const current = (wsList as Workspace[]).find(w => w.id === currentWorkspaceId);
             if (current) setCurrentWorkspace(current);
@@ -216,6 +226,7 @@ function useSidebarLogic(currentWorkspaceId: string) {
         workspaces,
         currentWorkspace,
         channels,
+        categories,
         currentUser,
         notifications,
         unreadCount,
@@ -232,6 +243,7 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
         workspaces,
         currentWorkspace,
         channels,
+        categories,
         currentUser,
         notifications,
         unreadCount,
@@ -251,6 +263,7 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
                 workspaces={workspaces}
                 currentUser={currentUser}
                 channels={channels}
+                categories={categories}
                 notifications={notifications}
                 unreadCount={unreadCount}
                 handleWorkspaceChange={handleWorkspaceChange}
@@ -268,6 +281,7 @@ export function MobileSidebar({ currentWorkspaceId }: { currentWorkspaceId: stri
         workspaces,
         currentWorkspace,
         channels,
+        categories,
         currentUser,
         notifications,
         unreadCount,
@@ -293,6 +307,7 @@ export function MobileSidebar({ currentWorkspaceId }: { currentWorkspaceId: stri
                     workspaces={workspaces}
                     currentUser={currentUser}
                     channels={channels}
+                    categories={categories}
                     notifications={notifications}
                     unreadCount={unreadCount}
                     handleWorkspaceChange={handleWorkspaceChange}
@@ -312,6 +327,7 @@ export function SidebarContent({
     workspaces,
     currentUser,
     channels,
+    categories,
     notifications,
     unreadCount,
     handleWorkspaceChange,
@@ -325,19 +341,25 @@ export function SidebarContent({
     workspaces: Workspace[];
     currentUser: User | null;
     channels: Channel[];
+    categories: Category[];
     notifications: Notification[];
     unreadCount: number;
     handleWorkspaceChange: (id: string) => void;
     handleLogout: () => void;
     handleMarkRead: (id: string) => void;
-    handleStatusUpdate: (status: string, customStatus?: string) => Promise<void>;
+    handleStatusUpdate?: (status: string, customStatus?: string) => Promise<void>;
     fetchData: () => Promise<void>;
 }) {
-    const router = useRouter();
     const pathname = usePathname();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
     const [isCreateDMOpen, setIsCreateDMOpen] = useState(false);
+    const [isCreateCategoryOpen, setIsCreateCategoryOpen] = useState(false);
+    const [selectedCategoryForChannel, setSelectedCategoryForChannel] = useState<string | null>(null);
+    const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+    const [draggedChannel, setDraggedChannel] = useState<Channel | null>(null);
+    const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+    const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
 
     // Channel Action States
     const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -414,55 +436,127 @@ export function SidebarContent({
 
             {/* Channels Section */}
             <div className="flex-1 overflow-y-auto py-4 px-3">
-                {/* Channel Group */}
-                <div>
-                    {/* Channels Header with Context Menu */}
-                    <ContextMenu>
-                        <ContextMenuTrigger asChild>
-                            <div className="px-2 mb-1 flex items-center justify-between group cursor-default hover:bg-white/10 dark:hover:bg-white/5 rounded transition-colors py-1">
-                                <span className="text-white/70 dark:text-gray-400 font-semibold text-sm">
-                                    Channels
-                                </span>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setIsCreateChannelOpen(true);
-                                    }}
-                                    className="text-white/50 dark:text-gray-500 hover:text-white dark:hover:text-gray-300 transition-all opacity-0 group-hover:opacity-100"
-                                >
-                                    <Plus className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
-                            <ContextMenuItem
-                                className="flex items-center px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer outline-none text-sm"
-                                onSelect={() => setIsCreateChannelOpen(true)}
+                {/* Uncategorized Channels */}
+                <div
+                    data-uncategorized="true"
+                    onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOverCategory(null);
+                    }}
+                    onDrop={async (e) => {
+                        e.preventDefault();
+                        if (draggedChannel && draggedChannel.category_id) {
+                            try {
+                                console.log("Moving channel to uncategorized:", draggedChannel.id);
+                                await api.updateChannelCategory(currentWorkspaceId, draggedChannel.id, null);
+                                fetchData();
+                            } catch (err: any) {
+                                console.error("Failed to move channel to uncategorized:", err);
+                            }
+                        }
+                        setDragOverCategory(null);
+                    }}
+                >
+                    <div className="px-2 mb-1 flex items-center justify-between group cursor-default hover:bg-white/10 dark:hover:bg-white/5 rounded transition-colors py-1">
+                        <span className="text-white/70 dark:text-gray-400 font-semibold text-sm">
+                            Channels
+                        </span>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedCategoryForChannel(null);
+                                    setIsCreateChannelOpen(true);
+                                }}
+                                className="text-white/50 dark:text-gray-500 hover:text-white dark:hover:text-gray-300 transition-all p-1 hover:bg-white/10 rounded"
+                                title="Create Channel"
                             >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Create Channel
-                            </ContextMenuItem>
-                        </ContextMenuContent>
-                    </ContextMenu>
+                                <Plus className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsCreateCategoryOpen(true);
+                                }}
+                                className="text-white/50 dark:text-gray-500 hover:text-white dark:hover:text-gray-300 transition-all p-1 hover:bg-white/10 rounded"
+                                title="Create Category"
+                            >
+                                <Folder className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
 
-                    {/* Channel List */}
+                    {/* Uncategorized Channel List */}
                     <div className="space-y-0.5">
                         {channels
-                            .filter(c => c.type !== 'dm') // Filter out DMs
-                            .map((channel, idx) => {
+                            .filter(c => c.type !== 'dm' && !c.category_id)
+                            .map((channel) => {
                                 const isActive = pathname?.includes(`/${channel.id}`);
-                                const hasUnread = !isActive && idx % 3 === 0;
 
                                 return (
                                     <ContextMenu key={channel.id}>
                                         <ContextMenuTrigger asChild>
                                             <Link
                                                 href={`/client/${currentWorkspaceId}/${channel.id}`}
+                                                draggable
+                                                onDragStart={() => setDraggedChannel(channel)}
+                                                onDragEnd={() => {
+                                                    setDraggedChannel(null);
+                                                    setDragOverCategory(null);
+                                                }}
+                                                onTouchStart={(e) => {
+                                                    const touch = e.touches[0];
+                                                    setTouchStartPos({ x: touch.clientX, y: touch.clientY });
+                                                    setDraggedChannel(channel);
+                                                }}
+                                                onTouchMove={(e) => {
+                                                    if (!draggedChannel || !touchStartPos) return;
+                                                    const touch = e.touches[0];
+                                                    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                                                    const categoryEl = element?.closest('[data-category-id]');
+                                                    if (categoryEl) {
+                                                        const categoryId = categoryEl.getAttribute('data-category-id');
+                                                        setDragOverCategory(categoryId);
+                                                    } else {
+                                                        setDragOverCategory(null);
+                                                    }
+                                                }}
+                                                onTouchEnd={async (e) => {
+                                                    if (!draggedChannel || !touchStartPos) return;
+                                                    const touch = e.changedTouches[0];
+                                                    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                                                    const categoryEl = element?.closest('[data-category-id]');
+                                                    
+                                                    if (categoryEl) {
+                                                        const categoryId = categoryEl.getAttribute('data-category-id');
+                                                        if (categoryId) {
+                                                            try {
+                                                                await api.updateChannelCategory(currentWorkspaceId, draggedChannel.id, categoryId);
+                                                                fetchData();
+                                                            } catch (err: any) {
+                                                                console.error("Failed to move channel:", err);
+                                                            }
+                                                        }
+                                                    } else if (element?.closest('[data-uncategorized]')) {
+                                                        if (draggedChannel.category_id) {
+                                                            try {
+                                                                await api.updateChannelCategory(currentWorkspaceId, draggedChannel.id, null);
+                                                                fetchData();
+                                                            } catch (err: any) {
+                                                                console.error("Failed to move channel:", err);
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    setDraggedChannel(null);
+                                                    setDragOverCategory(null);
+                                                    setTouchStartPos(null);
+                                                }}
                                                 className={cn(
-                                                    "flex items-center px-2 py-1 rounded transition-colors group",
+                                                    "flex items-center px-3 py-2 rounded-md transition-all group/item cursor-pointer",
                                                     isActive
-                                                        ? "bg-[#1164a3] dark:bg-[#404249] text-white"
-                                                        : "text-white/70 dark:text-gray-400 hover:bg-white/10 dark:hover:bg-white/5"
+                                                        ? "bg-white/20 dark:bg-white/10 text-white font-semibold shadow-md"
+                                                        : "text-white/80 dark:text-gray-300 hover:bg-white/10 dark:hover:bg-white/5 hover:text-white dark:hover:text-gray-100"
                                                 )}
                                             >
                                                 {channel.type === 'voice' ? (
@@ -473,39 +567,235 @@ export function SidebarContent({
                                                 <span className={cn("truncate font-normal text-[15px]", isActive && "font-semibold")}>
                                                     {channel.name}
                                                 </span>
-
-                                                {hasUnread && (
-                                                    <div className="ml-auto w-2 h-2 rounded-full bg-white" />
-                                                )}
                                             </Link>
                                         </ContextMenuTrigger>
-                                        <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
-                                            <ContextMenuItem
-                                                className="flex items-center px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer outline-none text-sm"
-                                                onSelect={() => {
-                                                    setChannelToRename(channel);
-                                                    setIsRenameDialogOpen(true);
-                                                }}
-                                            >
-                                                <Edit2 className="w-4 h-4 mr-2" />
-                                                Edit Channel
-                                            </ContextMenuItem>
-                                            <ContextMenuItem
-                                                className="flex items-center px-3 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 cursor-pointer outline-none text-sm"
-                                                onSelect={() => {
-                                                    setChannelToDelete(channel);
-                                                    setIsDeleteDialogOpen(true);
-                                                }}
-                                            >
-                                                <Trash2 className="w-4 h-4 mr-2" />
-                                                Delete Channel
-                                            </ContextMenuItem>
-                                        </ContextMenuContent>
+                                        <ContextMenuPortal>
+                                            <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
+                                                <ContextMenuItem
+                                                    className="flex items-center px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer outline-none text-sm"
+                                                    onSelect={() => {
+                                                        setChannelToRename(channel);
+                                                        setIsRenameDialogOpen(true);
+                                                    }}
+                                                >
+                                                    <Edit2 className="w-4 h-4 mr-2" />
+                                                    Edit Channel
+                                                </ContextMenuItem>
+                                                <ContextMenuItem
+                                                    className="flex items-center px-3 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 cursor-pointer outline-none text-sm"
+                                                    onSelect={() => {
+                                                        setChannelToDelete(channel);
+                                                        setIsDeleteDialogOpen(true);
+                                                    }}
+                                                >
+                                                    <Trash2 className="w-4 h-4 mr-2" />
+                                                    Delete Channel
+                                                </ContextMenuItem>
+                                            </ContextMenuContent>
+                                        </ContextMenuPortal>
                                     </ContextMenu>
-                                )
+                                );
                             })}
                     </div>
                 </div>
+
+                {/* Categories */}
+                {categories.sort((a, b) => a.position - b.position).map((category) => {
+                    const isCollapsed = collapsedCategories.has(category.id);
+                    const categoryChannels = channels.filter(c => c.category_id === category.id);
+                    const isDragOver = dragOverCategory === category.id;
+
+                    return (
+                        <div key={category.id} className="mt-4">
+                            <ContextMenu>
+                                <ContextMenuTrigger asChild>
+                                    <div
+                                        data-category-id={category.id}
+                                        className={cn(
+                                            "px-2 mb-1 flex items-center justify-between group cursor-pointer hover:bg-white/10 dark:hover:bg-white/5 rounded transition-colors py-1",
+                                            isDragOver && "bg-purple-500/20 border border-purple-500/50"
+                                        )}
+                                        onClick={(e) => {
+                                            // Don't toggle if clicking the plus button
+                                            if ((e.target as HTMLElement).closest('button')) return;
+                                            
+                                            setCollapsedCategories(prev => {
+                                                const next = new Set(prev);
+                                                if (next.has(category.id)) {
+                                                    next.delete(category.id);
+                                                } else {
+                                                    next.add(category.id);
+                                                }
+                                                return next;
+                                            });
+                                        }}
+                                        onDragOver={(e) => {
+                                            e.preventDefault();
+                                            setDragOverCategory(category.id);
+                                        }}
+                                        onDragLeave={() => setDragOverCategory(null)}
+                                        onDrop={async (e) => {
+                                            e.preventDefault();
+                                            if (draggedChannel) {
+                                                try {
+                                                    console.log("Moving channel to category:", draggedChannel.id, "->", category.id);
+                                                    await api.updateChannelCategory(currentWorkspaceId, draggedChannel.id, category.id);
+                                                    fetchData();
+                                                } catch (err: any) {
+                                                    console.error("Failed to move channel:", err);
+                                                }
+                                            }
+                                            setDragOverCategory(null);
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-1 text-white/70 dark:text-gray-400 font-semibold text-sm">
+                                            <ChevronRight className={cn("w-4 h-4 transition-transform", !isCollapsed && "rotate-90")} />
+                                            {isCollapsed ? <Folder className="w-4 h-4" /> : <FolderOpen className="w-4 h-4" />}
+                                            <span>{category.name}</span>
+                                        </div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedCategoryForChannel(category.id);
+                                                setIsCreateChannelOpen(true);
+                                            }}
+                                            className="text-white/50 dark:text-gray-500 hover:text-white dark:hover:text-gray-300 transition-all p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100"
+                                            title="Create Channel in Category"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </ContextMenuTrigger>
+                                <ContextMenuPortal>
+                                    <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
+                                        <ContextMenuItem
+                                            className="flex items-center px-3 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 cursor-pointer outline-none text-sm"
+                                            onSelect={async () => {
+                                                try {
+                                                    await api.delete(`/categories/${category.id}`);
+                                                    fetchData();
+                                                } catch (err) {
+                                                    console.error("Failed to delete category:", err);
+                                                }
+                                            }}
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete Category
+                                        </ContextMenuItem>
+                                    </ContextMenuContent>
+                                </ContextMenuPortal>
+                            </ContextMenu>
+
+                            {!isCollapsed && (
+                                <div className="space-y-0.5 ml-4">
+                                    {categoryChannels.map((channel) => {
+                                        const isActive = pathname?.includes(`/${channel.id}`);
+
+                                        return (
+                                            <ContextMenu key={channel.id}>
+                                                <ContextMenuTrigger asChild>
+                                                    <Link
+                                                        href={`/client/${currentWorkspaceId}/${channel.id}`}
+                                                        draggable
+                                                        onDragStart={() => setDraggedChannel(channel)}
+                                                        onDragEnd={() => setDraggedChannel(null)}
+                                                        onTouchStart={(e) => {
+                                                            const touch = e.touches[0];
+                                                            setTouchStartPos({ x: touch.clientX, y: touch.clientY });
+                                                            setDraggedChannel(channel);
+                                                        }}
+                                                        onTouchMove={(e) => {
+                                                            if (!draggedChannel || !touchStartPos) return;
+                                                            const touch = e.touches[0];
+                                                            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                                                            const categoryEl = element?.closest('[data-category-id]');
+                                                            if (categoryEl) {
+                                                                const categoryId = categoryEl.getAttribute('data-category-id');
+                                                                setDragOverCategory(categoryId);
+                                                            } else {
+                                                                setDragOverCategory(null);
+                                                            }
+                                                        }}
+                                                        onTouchEnd={async (e) => {
+                                                            if (!draggedChannel || !touchStartPos) return;
+                                                            const touch = e.changedTouches[0];
+                                                            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                                                            const categoryEl = element?.closest('[data-category-id]');
+                                                            
+                                                            if (categoryEl) {
+                                                                const categoryId = categoryEl.getAttribute('data-category-id');
+                                                                if (categoryId) {
+                                                                    try {
+                                                                        await api.updateChannelCategory(currentWorkspaceId, draggedChannel.id, categoryId);
+                                                                        fetchData();
+                                                                    } catch (err: any) {
+                                                                        console.error("Failed to move channel:", err);
+                                                                    }
+                                                                }
+                                                            } else if (element?.closest('[data-uncategorized]')) {
+                                                                if (draggedChannel.category_id) {
+                                                                    try {
+                                                                        await api.updateChannelCategory(currentWorkspaceId, draggedChannel.id, null);
+                                                                        fetchData();
+                                                                    } catch (err: any) {
+                                                                        console.error("Failed to move channel:", err);
+                                                                    }
+                                                                }
+                                                            }
+                                                            
+                                                            setDraggedChannel(null);
+                                                            setDragOverCategory(null);
+                                                            setTouchStartPos(null);
+                                                        }}
+                                                        className={cn(
+                                                            "flex items-center px-3 py-2 rounded-md transition-all group/item cursor-pointer",
+                                                            isActive
+                                                                ? "bg-white/20 dark:bg-white/10 text-white font-semibold shadow-md"
+                                                                : "text-white/80 dark:text-gray-300 hover:bg-white/10 dark:hover:bg-white/5 hover:text-white dark:hover:text-gray-100"
+                                                        )}
+                                                    >
+                                                        {channel.type === 'voice' ? (
+                                                            <Volume2 className="w-4 h-4 mr-2" />
+                                                        ) : (
+                                                            <Hash className="w-4 h-4 mr-2" />
+                                                        )}
+                                                        <span className={cn("truncate font-normal text-[15px]", isActive && "font-semibold")}>
+                                                            {channel.name}
+                                                        </span>
+                                                    </Link>
+                                                </ContextMenuTrigger>
+                                                <ContextMenuPortal>
+                                                    <ContextMenuContent className="bg-white dark:bg-[#2b2d31] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl p-1 w-48">
+                                                        <ContextMenuItem
+                                                            className="flex items-center px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer outline-none text-sm"
+                                                            onSelect={() => {
+                                                                setChannelToRename(channel);
+                                                                setIsRenameDialogOpen(true);
+                                                            }}
+                                                        >
+                                                            <Edit2 className="w-4 h-4 mr-2" />
+                                                            Edit Channel
+                                                        </ContextMenuItem>
+                                                        <ContextMenuItem
+                                                            className="flex items-center px-3 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 cursor-pointer outline-none text-sm"
+                                                            onSelect={() => {
+                                                                setChannelToDelete(channel);
+                                                                setIsDeleteDialogOpen(true);
+                                                            }}
+                                                        >
+                                                            <Trash2 className="w-4 h-4 mr-2" />
+                                                            Delete Channel
+                                                        </ContextMenuItem>
+                                                    </ContextMenuContent>
+                                                </ContextMenuPortal>
+                                            </ContextMenu>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
 
                 {/* Direct Messages Group */}
                 <div className="mt-6">
@@ -524,10 +814,10 @@ export function SidebarContent({
                         </button>
                     </div>
 
-                    <div className="space-y-0.5">
-                        {channels
-                            .filter(c => c.type === 'dm')
-                            .map((channel, idx) => {
+                                <div className="space-y-0.5">
+                    {channels
+                        .filter(c => c.type === 'dm')
+                        .map((channel) => {
                                 const isActive = pathname?.includes(`/${channel.id}`);
                                 let displayName = channel.name;
                                 let statusColor = "bg-gray-400";
@@ -614,12 +904,12 @@ export function SidebarContent({
                             <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 mb-2">
                                 <p className="text-sm font-semibold">{currentUser?.username}</p>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{currentUser?.email}</p>
-                                {currentUser && (
+                                {currentUser && handleStatusUpdate && (
                                     <div className="mt-2">
                                         <StatusSelector
-                                            currentStatus={currentUser.status || "online"}
-                                            customStatus={currentUser.custom_status}
-                                            onStatusChange={handleStatusUpdate}
+                                            currentStatus={currentUser?.status || "online"}
+                                            customStatus={currentUser?.custom_status}
+                                            onStatusChange={handleStatusUpdate!}
                                         />
                                     </div>
                                 )}
@@ -713,9 +1003,13 @@ export function SidebarContent({
 
             <CreateChannelDialog
                 open={isCreateChannelOpen}
-                onOpenChange={setIsCreateChannelOpen}
+                onOpenChange={(open) => {
+                    setIsCreateChannelOpen(open);
+                    if (!open) setSelectedCategoryForChannel(null);
+                }}
                 workspaceId={currentWorkspaceId}
                 onSuccess={fetchData}
+                defaultCategoryId={selectedCategoryForChannel}
             />
 
             <CreateDMDialog
@@ -725,32 +1019,36 @@ export function SidebarContent({
                 onSuccess={fetchData}
             />
 
+            {isCreateCategoryOpen && (
+                <CreateCategoryDialog
+                    workspaceId={currentWorkspaceId}
+                    onSuccess={fetchData}
+                    onClose={() => setIsCreateCategoryOpen(false)}
+                />
+            )}
 
-            {
-                channelToRename && (
-                    <RenameChannelDialog
-                        open={isRenameDialogOpen}
-                        onOpenChange={setIsRenameDialogOpen}
-                        channelId={channelToRename.id}
-                        currentName={channelToRename.name}
-                        onSuccess={fetchData}
-                    />
-                )
-            }
 
-            {
-                channelToDelete && (
-                    <DeleteChannelDialog
-                        open={isDeleteDialogOpen}
-                        onOpenChange={setIsDeleteDialogOpen}
-                        channelId={channelToDelete.id}
-                        channelName={channelToDelete.name}
-                        onSuccess={fetchData}
-                    />
-                )
-            }
-        </div >
-    )
+            {channelToRename && (
+                <RenameChannelDialog
+                    open={isRenameDialogOpen}
+                    onOpenChange={setIsRenameDialogOpen}
+                    channelId={channelToRename?.id}
+                    currentName={channelToRename?.name}
+                    onSuccess={fetchData}
+                />
+            )}
+
+            {channelToDelete && (
+                <DeleteChannelDialog
+                    open={isDeleteDialogOpen}
+                    onOpenChange={setIsDeleteDialogOpen}
+                    channelId={channelToDelete?.id}
+                    channelName={channelToDelete?.name}
+                    onSuccess={fetchData}
+                />
+            )}
+        </div>
+    );
 }
 
 // Theme Toggle Component

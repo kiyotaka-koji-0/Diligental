@@ -17,11 +17,18 @@ interface PeerConnectionState {
 export const useMeshWebRTC = ({ user, channelId, socket }: MeshWebRTCConfig) => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [peers, setPeers] = useState<Map<string, PeerConnectionState>>(new Map());
+    const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+    const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
     // Force update for Map state changes
     const [, setForceUpdate] = useState(0);
 
     const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
     const iceCandidateQueue = useRef<Map<string, RTCIceCandidate[]>>(new Map());
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const recordedChunksRef = useRef<Blob[]>([]);
+    const originalStreamRef = useRef<MediaStream | null>(null);
 
     const iceServers = {
         iceServers: [
@@ -356,6 +363,127 @@ export const useMeshWebRTC = ({ user, channelId, socket }: MeshWebRTCConfig) => 
         }
     }, [socket, user, createPeer]);
 
+    // Toggle Audio
+    const toggleAudio = useCallback(() => {
+        if (localStream) {
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled;
+                setIsAudioEnabled(audioTrack.enabled);
+            }
+        }
+    }, [localStream]);
+
+    // Toggle Video
+    const toggleVideo = useCallback(() => {
+        if (localStream) {
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !videoTrack.enabled;
+                setIsVideoEnabled(videoTrack.enabled);
+            }
+        }
+    }, [localStream]);
+
+    // Start Screen Share
+    const startScreenShare = useCallback(async () => {
+        try {
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+                video: true,
+                audio: false
+            });
+            
+            // Save original stream
+            originalStreamRef.current = localStream;
+            
+            // Replace video track in all peer connections
+            const screenTrack = screenStream.getVideoTracks()[0];
+            peerConnections.current.forEach((pc) => {
+                const senders = pc.getSenders();
+                const videoSender = senders.find(sender => sender.track?.kind === 'video');
+                if (videoSender) {
+                    videoSender.replaceTrack(screenTrack);
+                }
+            });
+
+            // Update local stream
+            const audioTrack = localStream?.getAudioTracks()[0];
+            const newStream = new MediaStream([screenTrack]);
+            if (audioTrack) newStream.addTrack(audioTrack);
+            
+            setLocalStream(newStream);
+            setIsScreenSharing(true);
+
+            // Stop sharing when user stops it from browser UI
+            screenTrack.onended = () => {
+                stopScreenShare();
+            };
+        } catch (err) {
+            console.error("[Mesh] Error starting screen share:", err);
+        }
+    }, [localStream]);
+
+    // Stop Screen Share
+    const stopScreenShare = useCallback(() => {
+        if (!originalStreamRef.current) return;
+
+        const videoTrack = originalStreamRef.current.getVideoTracks()[0];
+        
+        // Replace screen track with camera track in all peer connections
+        peerConnections.current.forEach((pc) => {
+            const senders = pc.getSenders();
+            const videoSender = senders.find(sender => sender.track?.kind === 'video');
+            if (videoSender && videoTrack) {
+                videoSender.replaceTrack(videoTrack);
+            }
+        });
+
+        // Restore original stream
+        setLocalStream(originalStreamRef.current);
+        setIsScreenSharing(false);
+        originalStreamRef.current = null;
+    }, []);
+
+    // Start Recording
+    const startRecording = useCallback(() => {
+        if (!localStream) return;
+
+        try {
+            const options = { mimeType: 'video/webm;codecs=vp9' };
+            mediaRecorderRef.current = new MediaRecorder(localStream, options);
+            recordedChunksRef.current = [];
+
+            mediaRecorderRef.current.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorderRef.current.onstop = () => {
+                const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `voice-channel-${Date.now()}.webm`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            mediaRecorderRef.current.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error("[Mesh] Error starting recording:", err);
+        }
+    }, [localStream]);
+
+    // Stop Recording
+    const stopRecording = useCallback(() => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+        }
+    }, [isRecording]);
+
     // Automatic cleanup on unmount
     useEffect(() => {
         return () => {
@@ -374,7 +502,17 @@ export const useMeshWebRTC = ({ user, channelId, socket }: MeshWebRTCConfig) => 
         leaveVoice,
         handleSignal,
         localStream,
-        peers
+        peers,
+        toggleAudio,
+        toggleVideo,
+        isAudioEnabled,
+        isVideoEnabled,
+        startScreenShare,
+        stopScreenShare,
+        isScreenSharing,
+        startRecording,
+        stopRecording,
+        isRecording
     };
 };
 

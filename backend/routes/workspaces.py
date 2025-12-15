@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from typing import List
 import uuid
 
@@ -114,4 +115,83 @@ async def get_workspace_members(
     # Fetch members (need a CRUD method or direct query)
     # Let's add crud.get_workspace_members
     return await crud.get_workspace_members(db, workspace_id)
+
+@router.post("/{workspace_id}/categories", response_model=schemas.Category)
+async def create_category(
+    workspace_id: uuid.UUID,
+    category: schemas.CategoryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Verify membership
+    member = await crud.get_workspace_member(db, workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    return await crud.create_category(db, workspace_id, category.name)
+
+@router.get("/{workspace_id}/categories", response_model=List[schemas.Category])
+async def get_categories(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Verify membership
+    member = await crud.get_workspace_member(db, workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    return await crud.get_categories(db, workspace_id)
+
+@router.patch("/{workspace_id}/channels/{channel_id}", response_model=schemas.Channel)
+async def update_channel(
+    workspace_id: uuid.UUID,
+    channel_id: uuid.UUID,
+    channel_update: schemas.ChannelUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Verify membership
+    member = await crud.get_workspace_member(db, workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Verify channel belongs to workspace
+    result = await db.execute(select(models.Channel).filter(models.Channel.id == channel_id, models.Channel.workspace_id == workspace_id).options(selectinload(models.Channel.members)))
+    channel = result.scalars().first()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    updated = await crud.update_channel_category(db, str(channel_id), str(channel_update.category_id) if channel_update.category_id else None, channel_update.position)
+    
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update channel")
+    
+    # Re-fetch the updated channel with relationships eager-loaded
+    result = await db.execute(select(models.Channel).filter(models.Channel.id == channel_id).options(selectinload(models.Channel.members)))
+    return result.scalars().first()
+
+@router.delete("/{workspace_id}/categories/{category_id}")
+async def delete_category(
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Verify membership
+    member = await crud.get_workspace_member(db, workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Verify category belongs to workspace
+    result = await db.execute(select(models.Category).filter(models.Category.id == category_id, models.Category.workspace_id == workspace_id))
+    category = result.scalars().first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    # Delete the category (cascade will handle channels)
+    db.delete(category)
+    await db.commit()
+    
+    return {"status": "ok"}
 

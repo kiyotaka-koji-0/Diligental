@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, use, useCallback, useContext } from "react";
 import { Message, Channel, User, Attachment } from "@/lib/api";
 import api from "@/lib/api";
-import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video, Bell, BellOff, Smile, Plus, Paperclip, X, FileIcon, Pin, PanelRight, PanelLeft } from "lucide-react";
+import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video, Bell, BellOff, Smile, Plus, Paperclip, X, FileIcon, Pin, PanelRight, PanelLeft, Search, Calendar } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,20 @@ export default function ChannelPage({
     const [unreadCount, setUnreadCount] = useState(0);
     const [showMemberDock, setShowMemberDock] = useState(true);
     const [showMemberDrawer, setShowMemberDrawer] = useState(false);
+
+    // Search State
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState<Message[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [showSearchResults, setShowSearchResults] = useState(false);
+
+    // Editing State
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+    const [editingContent, setEditingContent] = useState("");
+
+    // Date Navigation State
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<string>("");
 
     // Threading State
     const [activeThread, setActiveThread] = useState<Message | null>(null);
@@ -121,7 +135,14 @@ export default function ChannelPage({
         toggleAudio,
         toggleVideo,
         isAudioEnabled,
-        isVideoEnabled
+        isVideoEnabled,
+        startScreenShare,
+        stopScreenShare,
+        isScreenSharing,
+        startRecording,
+        stopRecording,
+        isRecording,
+        recordingUrl,
     } = useWebRTC({
         user: currentUser,
         channelId,
@@ -509,6 +530,48 @@ export default function ChannelPage({
         }
     };
 
+    const createMessageContextMenu = useCallback((msg: Message, isMe: boolean) => {
+        return (e: React.MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!showContextMenu) return;
+
+            const items: any[] = [];
+
+            items.push({
+                label: "Copy Text",
+                onClick: () => navigator.clipboard.writeText(msg.content),
+            });
+
+            items.push({
+                label: "Reply in Thread",
+                onClick: () => setActiveThread(msg),
+            });
+
+            if (msg.is_pinned) {
+                items.push({
+                    label: "Unpin Message",
+                    onClick: () => handleUnpinMessage(msg.id),
+                });
+            } else {
+                items.push({
+                    label: "Pin Message",
+                    onClick: () => handlePinMessage(msg.id),
+                });
+            }
+
+            if (isMe) {
+                items.push({
+                    label: "Edit Message",
+                    onClick: () => handleEditMessage(msg.id, msg.content),
+                    divider: true,
+                });
+            }
+
+            showContextMenu(e.clientX, e.clientY, items);
+        };
+    }, [showContextMenu, currentUser]);
+
     const handleSendMessage = async (e?: React.FormEvent) => {
         e?.preventDefault();
         if ((!newMessage.trim() && attachments.length === 0) || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -659,6 +722,87 @@ export default function ChannelPage({
         }
     };
 
+    const handleSearch = async (query: string) => {
+        setSearchQuery(query);
+        if (!query.trim()) {
+            setSearchResults([]);
+            setShowSearchResults(false);
+            return;
+        }
+
+        setIsSearching(true);
+        setShowSearchResults(true);
+        try {
+            const results = messages.filter(msg => 
+                msg.content.toLowerCase().includes(query.toLowerCase()) ||
+                (msg.user?.username || msg.sender?.username || '').toLowerCase().includes(query.toLowerCase())
+            );
+            setSearchResults(results);
+        } catch (err) {
+            console.error("Search failed:", err);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const scrollToMessage = (messageId: string) => {
+        const element = document.getElementById(`message-${messageId}`);
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.classList.add('highlight-message');
+            setTimeout(() => element.classList.remove('highlight-message'), 2000);
+        }
+        setShowSearchResults(false);
+        setSearchQuery("");
+    };
+
+    const handleEditMessage = (messageId: string, currentContent: string) => {
+        setEditingMessageId(messageId);
+        setEditingContent(currentContent);
+    };
+
+    const saveEdit = async (messageId: string) => {
+        if (!editingContent.trim() || !wsRef.current) return;
+        
+        try {
+            wsRef.current.send(JSON.stringify({
+                type: "message_edit",
+                message_id: messageId,
+                content: editingContent.trim()
+            }));
+            setEditingMessageId(null);
+            setEditingContent("");
+        } catch (err) {
+            console.error("Failed to edit message:", err);
+        }
+    };
+
+    const cancelEdit = () => {
+        setEditingMessageId(null);
+        setEditingContent("");
+    };
+
+    const handleJumpToDate = (date: string) => {
+        if (!date) return;
+        const targetDate = new Date(date);
+        targetDate.setHours(0, 0, 0, 0);
+        
+        const messageOnDate = messages.find(msg => {
+            const msgDate = new Date(msg.created_at);
+            msgDate.setHours(0, 0, 0, 0);
+            return msgDate >= targetDate;
+        });
+
+        if (messageOnDate) {
+            scrollToMessage(messageOnDate.id);
+        } else {
+            // No message found on or after this date
+            console.log("No messages found on or after:", date);
+        }
+        setShowDatePicker(false);
+        setSelectedDate("");
+    };
+
     if (channel?.type === 'voice') {
         return (
             <VoiceChannel
@@ -685,6 +829,12 @@ export default function ChannelPage({
                 toggleVideo={toggleVideo}
                 isAudioEnabled={isAudioEnabled}
                 isVideoEnabled={isVideoEnabled}
+                startScreenShare={startScreenShare}
+                stopScreenShare={stopScreenShare}
+                isScreenSharing={isScreenSharing}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
+                isRecording={isRecording}
             />
 
             {/* Header */}
@@ -718,6 +868,29 @@ export default function ChannelPage({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* Search Bar */}
+                    <div className="relative hidden md:block">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 dark:text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search messages..."
+                            value={searchQuery}
+                            onChange={(e) => handleSearch(e.target.value)}
+                            className="h-8 pl-9 pr-3 w-48 lg:w-64 rounded-lg bg-white/5 dark:bg-white/10 border border-white/10 dark:border-white/5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                        />
+                    </div>
+
+                    {/* Date Picker Button */}
+                    <Button
+                        onClick={() => setShowDatePicker(!showDatePicker)}
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-gray-500 dark:text-gray-300 hover:bg-white/10"
+                        title="Jump to date"
+                    >
+                        <Calendar className="h-4 w-4" />
+                    </Button>
+
                     <div className="flex items-center gap-1">
                         <Button
                             onClick={() => setShowMemberDrawer(true)}
@@ -803,6 +976,76 @@ export default function ChannelPage({
             {/* Main Content Area (Chat + Thread) */}
             <div className="flex-1 flex min-h-0 overflow-hidden relative">
 
+                {/* Date Picker Overlay */}
+                {showDatePicker && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 w-80 m-4 glass-premium rounded-xl shadow-2xl border border-white/20 dark:border-white/10 overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-white/10">
+                            <h3 className="font-semibold text-gray-900 dark:text-white">Jump to Date</h3>
+                            <Button
+                                onClick={() => { setShowDatePicker(false); setSelectedDate(""); }}
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <Input
+                                type="date"
+                                value={selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                className="bg-white/10 dark:bg-white/5 border-white/20"
+                            />
+                            <Button
+                                onClick={() => handleJumpToDate(selectedDate)}
+                                className="w-full"
+                                disabled={!selectedDate}
+                            >
+                                Jump to Date
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Search Results Overlay */}
+                {showSearchResults && (
+                    <div className="absolute top-0 right-0 z-30 w-80 max-h-96 m-4 glass-premium rounded-xl shadow-2xl border border-white/20 dark:border-white/10 overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-white/10">
+                            <h3 className="font-semibold text-gray-900 dark:text-white">Search Results</h3>
+                            <Button
+                                onClick={() => { setShowSearchResults(false); setSearchQuery(""); }}
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                            {isSearching ? (
+                                <div className="p-4 text-center text-gray-500 dark:text-gray-400">Searching...</div>
+                            ) : searchResults.length === 0 ? (
+                                <div className="p-4 text-center text-gray-500 dark:text-gray-400">No messages found</div>
+                            ) : (
+                                searchResults.map((msg) => (
+                                    <button
+                                        key={msg.id}
+                                        onClick={() => scrollToMessage(msg.id)}
+                                        className="w-full p-3 text-left hover:bg-white/10 border-b border-white/5 transition-colors"
+                                    >
+                                        <div className="font-medium text-sm text-gray-900 dark:text-white">{msg.user?.username || msg.sender?.username || 'Unknown'}</div>
+                                        <div className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">{msg.content}</div>
+                                        <div className="text-[10px] text-gray-500 dark:text-gray-500 mt-1">
+                                            {new Date(msg.created_at).toLocaleDateString()}
+                                        </div>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Chat Column */}
                 <div className="flex-1 flex flex-col min-w-0">
 
@@ -833,20 +1076,12 @@ export default function ChannelPage({
                         {messages.map((msg, index) => {
                             const isMe = isSelf(msg);
                             const showAvatar = index === 0 || messages[index - 1].user_id !== msg.user_id;
-
-                            // eslint-disable-next-line react-hooks/rules-of-hooks
-                            const { handleContextMenu } = useMessageContextMenu({
-                                message: msg,
-                                currentUser,
-                                channelId,
-                                onPin: () => handlePinMessage(msg.id),
-                                onUnpin: () => handleUnpinMessage(msg.id),
-                                onReply: () => setActiveThread(msg),
-                            });
+                            const handleContextMenu = createMessageContextMenu(msg, isMe);
 
                             return (
                                 <div
                                     key={msg.id || index}
+                                    id={`message-${msg.id}`}
                                     className={`flex gap-4 ${isMe ? "flex-row-reverse" : "flex-row"} group`}
                                     onContextMenu={handleContextMenu}
                                 >
@@ -875,11 +1110,43 @@ export default function ChannelPage({
                                             ? "bg-linear-to-br from-rose-200/80 via-rose-100/70 to-amber-100/60 dark:from-rose-900/60 dark:via-rose-800/50 dark:to-amber-800/40 border-rose-200/60 dark:border-rose-800/50 text-gray-900 dark:text-white rounded-tr-sm"
                                             : "bg-white/80 dark:bg-white/5 border-white/50 dark:border-white/10 text-gray-900 dark:text-white rounded-tl-sm hover:shadow-lg hover:-translate-y-0.5"
                                             }`}>
-                                            <RichTextRenderer 
-                                                content={msg.content}
-                                                mentions={msg.mentioned_users || []}
-                                                className="wrap-break-word"
-                                            />
+                                            {editingMessageId === msg.id ? (
+                                                <div className="space-y-2">
+                                                    <Input
+                                                        value={editingContent}
+                                                        onChange={(e) => setEditingContent(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                                e.preventDefault();
+                                                                saveEdit(msg.id);
+                                                            } else if (e.key === 'Escape') {
+                                                                cancelEdit();
+                                                            }
+                                                        }}
+                                                        className="bg-white/10 dark:bg-white/5 border-white/20"
+                                                        autoFocus
+                                                    />
+                                                    <div className="flex gap-2 justify-end">
+                                                        <Button onClick={cancelEdit} variant="ghost" size="sm" className="h-6 text-xs">
+                                                            Cancel
+                                                        </Button>
+                                                        <Button onClick={() => saveEdit(msg.id)} size="sm" className="h-6 text-xs">
+                                                            Save
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <RichTextRenderer 
+                                                        content={msg.content}
+                                                        mentions={msg.mentioned_users || []}
+                                                        className="wrap-break-word"
+                                                    />
+                                                    {msg.edited_at && (
+                                                        <span className="text-[10px] text-gray-500 dark:text-gray-500 ml-2">(edited)</span>
+                                                    )}
+                                                </>
+                                            )}
 
                                             {/* Attachments */}
                                             {msg.attachments && msg.attachments.length > 0 && (

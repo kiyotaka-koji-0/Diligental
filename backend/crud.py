@@ -477,3 +477,53 @@ async def get_pinned_messages(db: AsyncSession, channel_id: uuid.UUID):
         .order_by(Message.created_at.desc())
     )
     return result.unique().scalars().all()
+# Categories
+async def create_category(db: AsyncSession, workspace_id: str, name: str):
+    """Create a new category"""
+    import uuid
+    workspace_uuid = uuid.UUID(workspace_id) if isinstance(workspace_id, str) else workspace_id
+    category = models.Category(
+        id=uuid.uuid4(),
+        workspace_id=workspace_uuid,
+        name=name,
+        position=0
+    )
+    db.add(category)
+    await db.commit()
+    await db.refresh(category)
+    return category
+
+async def get_categories(db: AsyncSession, workspace_id: str):
+    """Get all categories in a workspace"""
+    import uuid
+    workspace_uuid = uuid.UUID(workspace_id) if isinstance(workspace_id, str) else workspace_id
+    result = await db.execute(
+        select(models.Category)
+        .filter(models.Category.workspace_id == workspace_uuid)
+        .order_by(models.Category.position.asc())
+    )
+    return result.scalars().all()
+
+async def update_channel_category(db: AsyncSession, channel_id: str, category_id: str = None, position: int = None):
+    """Move channel to a category or update its position"""
+    import uuid
+    channel_uuid = uuid.UUID(channel_id) if isinstance(channel_id, str) else channel_id
+    result = await db.execute(select(Channel).filter(Channel.id == channel_uuid))
+    channel = result.scalars().first()
+    
+    if channel:
+        if category_id:
+            category_uuid = uuid.UUID(category_id) if isinstance(category_id, str) else category_id
+            channel.category_id = category_uuid
+        else:
+            channel.category_id = None
+        
+        if position is not None:
+            channel.position = position
+        
+        await db.commit()
+        await db.refresh(channel)
+    
+    return channel
+    
+    return channel

@@ -49,6 +49,7 @@ class Workspace(Base):
     owner = relationship("User", back_populates="owned_workspaces")
     members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
     channels = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
+    categories = relationship("Category", back_populates="workspace", cascade="all, delete-orphan")
 
 class WorkspaceMember(Base):
     __tablename__ = "workspace_members"
@@ -82,9 +83,12 @@ class Channel(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
+    position = Column(Integer, nullable=True) # For ordering within category
 
     owner = relationship("User", back_populates="channels")
     workspace = relationship("Workspace", back_populates="channels")
+    category = relationship("Category", back_populates="channels")
     messages = relationship("Message", back_populates="channel", cascade="all, delete-orphan")
     members = relationship("ChannelMember", back_populates="channel", cascade="all, delete-orphan")
 
@@ -148,3 +152,15 @@ class Reaction(Base):
     # Relationships
     message = relationship("Message", back_populates="reactions")
     user = relationship("User", back_populates="reactions")
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    position = Column(Integer, default=0) # Order of categories
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    workspace = relationship("Workspace", back_populates="categories")
+    channels = relationship("Channel", back_populates="category", cascade="all, delete-orphan")

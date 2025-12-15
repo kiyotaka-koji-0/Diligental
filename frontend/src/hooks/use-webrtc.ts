@@ -16,9 +16,16 @@ export const useWebRTC = ({ user, channelId, socket, targetUserId, onIncomingCal
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [isCallActive, setIsCallActive] = useState(false);
     const [incomingCall, setIncomingCall] = useState<{ senderId: string; senderName: string } | null>(null);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
 
     const peerConnection = useRef<RTCPeerConnection | null>(null);
     const iceCandidateQueue = useRef<RTCIceCandidate[]>([]);
+    const screenStreamRef = useRef<MediaStream | null>(null);
+    const originalVideoTrackRef = useRef<MediaStreamTrack | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const recordedChunksRef = useRef<Blob[]>([]);
 
     // ICE Servers (Google STUN is free and reliable)
     const iceServers = {
@@ -39,6 +46,17 @@ export const useWebRTC = ({ user, channelId, socket, targetUserId, onIncomingCal
             remoteStream.getTracks().forEach(track => track.stop());
             setRemoteStream(null);
         }
+        if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach(t => t.stop());
+            screenStreamRef.current = null;
+        }
+        originalVideoTrackRef.current = null;
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        mediaRecorderRef.current = null;
+        recordedChunksRef.current = [];
+        setRecordingUrl(null);
         if (peerConnection.current) {
             // Remove event listeners to prevent memory leaks or side effects
             peerConnection.current.onicecandidate = null;
@@ -51,6 +69,8 @@ export const useWebRTC = ({ user, channelId, socket, targetUserId, onIncomingCal
         iceCandidateQueue.current = [];
         setIsAudioEnabled(true);
         setIsVideoEnabled(true);
+        setIsScreenSharing(false);
+        setIsRecording(false);
     }, [localStream, remoteStream]);
 
     // Ensure cleanup on unmount
@@ -108,6 +128,80 @@ export const useWebRTC = ({ user, channelId, socket, targetUserId, onIncomingCal
                     console.error("Error adding queued ice candidate", e);
                 }
             }
+        }
+    };
+
+    const getVideoSender = () => {
+        if (!peerConnection.current) return null;
+        return peerConnection.current.getSenders().find(sender => sender.track && sender.track.kind === 'video') || null;
+    };
+
+    const startScreenShare = async () => {
+        if (isScreenSharing) return;
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+            const screenTrack = stream.getVideoTracks()[0];
+            const sender = getVideoSender();
+            if (sender && screenTrack) {
+                originalVideoTrackRef.current = sender.track || null;
+                await sender.replaceTrack(screenTrack);
+            }
+            screenStreamRef.current = stream;
+            setIsScreenSharing(true);
+
+            screenTrack.onended = () => {
+                stopScreenShare();
+            };
+        } catch (err) {
+            console.error('Failed to start screen share', err);
+        }
+    };
+
+    const stopScreenShare = async () => {
+        if (!isScreenSharing) return;
+        const sender = getVideoSender();
+        const original = originalVideoTrackRef.current;
+        if (sender && original) {
+            await sender.replaceTrack(original);
+        }
+        if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach(t => t.stop());
+            screenStreamRef.current = null;
+        }
+        originalVideoTrackRef.current = null;
+        setIsScreenSharing(false);
+    };
+
+    const startRecording = () => {
+        if (isRecording) return;
+        const tracks: MediaStreamTrack[] = [];
+        if (remoteStream) tracks.push(...remoteStream.getTracks());
+        if (localStream) tracks.push(...localStream.getTracks());
+        if (tracks.length === 0) return;
+
+        const mixed = new MediaStream(tracks);
+        recordedChunksRef.current = [];
+        const recorder = new MediaRecorder(mixed, { mimeType: 'video/webm;codecs=vp8,opus' });
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+        };
+
+        recorder.onstop = () => {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            setRecordingUrl(url);
+            setIsRecording(false);
+        };
+
+        recorder.start();
+        setIsRecording(true);
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
         }
     };
 
@@ -296,6 +390,13 @@ export const useWebRTC = ({ user, channelId, socket, targetUserId, onIncomingCal
         toggleAudio,
         toggleVideo,
         isAudioEnabled,
-        isVideoEnabled
+        isVideoEnabled,
+        startScreenShare,
+        stopScreenShare,
+        isScreenSharing,
+        startRecording,
+        stopRecording,
+        isRecording,
+        recordingUrl,
     };
 };
