@@ -20,10 +20,14 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     tailnet_ip: Optional[str] = None
     role: Optional[str] = None
+    status: Optional[str] = None  # 'online', 'away', 'dnd', 'offline'
+    custom_status: Optional[str] = None
 
 class UserOut(UserBase):
     id: uuid.UUID
     role: str
+    status: str = "online"  # 'online', 'away', 'dnd', 'offline'
+    custom_status: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -117,6 +121,7 @@ class MessageCreate(MessageBase):
 class Message(MessageBase):
     id: uuid.UUID
     created_at: datetime
+    is_pinned: bool = False
     user_id: uuid.UUID
     user: Optional[UserOut] = None # Embed basic user info
     parent_id: Optional[uuid.UUID] = None

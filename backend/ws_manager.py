@@ -82,5 +82,24 @@ class ConnectionManager:
     def get_user_channel(self, user_id: str) -> str:
         """Get the channel a user is currently viewing"""
         return self.user_locations.get(user_id)
+    
+    async def broadcast_status_change(self, user_id: str, status: str, custom_status: str = None, workspace_id: str = None):
+        """Broadcast user status change to all users in the workspace"""
+        message = {
+            "type": "status_update",
+            "user_id": user_id,
+            "status": status,
+            "custom_status": custom_status,
+        }
+        
+        # If workspace_id provided, broadcast to all channels in that workspace
+        # For now, broadcast to all notification connections
+        message_str = json.dumps(message, default=str)
+        for uid, connections in self.user_connections.items():
+            for connection in connections:
+                try:
+                    await connection.send_text(message_str)
+                except Exception:
+                    pass
 
 manager = ConnectionManager()

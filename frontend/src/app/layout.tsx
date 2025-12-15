@@ -4,6 +4,7 @@ import "./globals.css";
 import "@/styles/glassmorphism.css";
 import { ThemeProvider } from "@/contexts/theme-context";
 import PWARegister from "@/components/pwa-register";
+import { ContextMenuProvider } from "@/contexts/context-menu-context";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -65,9 +66,11 @@ export default function RootLayout({
         style={{ height: '100%', margin: 0, padding: 0 }}
       >
         <ThemeProvider>
-          <PWARegister />
-          <div className="bg-grid-pattern" />
-          {children}
+          <ContextMenuProvider>
+            <PWARegister />
+            <div className="bg-grid-pattern" />
+            {children}
+          </ContextMenuProvider>
         </ThemeProvider>
       </body>
     </html>

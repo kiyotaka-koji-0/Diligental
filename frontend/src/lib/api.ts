@@ -25,6 +25,9 @@ export interface User {
     email: string;
     username: string;
     avatar_url?: string;
+    status?: 'online' | 'away' | 'dnd' | 'offline';
+    custom_status?: string;
+    is_admin?: boolean;
 }
 
 export interface Channel {
@@ -63,6 +66,7 @@ export interface Message {
     user_id: string;
     content: string;
     created_at: string;
+    is_pinned?: boolean;
     user?: User;         // The backend explicitly sends 'user' object in schema
     sender?: User;       // Fallback
     sender_id?: string;  // Fallback
@@ -170,7 +174,9 @@ async function baseApiFetch<T>(method: string, endpoint: string, data?: any, opt
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: "An error occurred" }));
-        throw new Error(error.detail || response.statusText);
+        const errorMsg = error.detail || response.statusText;
+        console.error(`API Error [${method} ${endpoint}]: ${response.status} - ${errorMsg}`, error);
+        throw new Error(errorMsg);
     }
 
     return response.json();
@@ -290,6 +296,18 @@ export const api = {
             file_type: data.file_type
         } as Attachment;
     },
+
+    // User Status
+    updateUserStatus: (userId: string, status: string, customStatus?: string) => 
+        api.put<User>(`/users/${userId}/status`, { status, custom_status: customStatus }),
+
+    // Message Pinning
+    pinMessage: (channelId: string, messageId: string) => 
+        api.post<Message>(`/channels/${channelId}/messages/${messageId}/pin`, {}),
+    unpinMessage: (channelId: string, messageId: string) => 
+        api.delete<Message>(`/channels/${channelId}/messages/${messageId}/pin`),
+    getPinnedMessages: (channelId: string) => 
+        api.get<Message[]>(`/channels/${channelId}/pinned`),
 
     logout: () => {
         if (typeof window !== 'undefined') {

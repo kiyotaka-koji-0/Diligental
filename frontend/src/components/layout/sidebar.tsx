@@ -8,6 +8,8 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import api, { Notification } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/contexts/theme-context";
+import { StatusSelector } from "@/components/ui/status-selector";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import { RenameChannelDialog } from "@/components/channel/rename-channel-dialog";
 import { DeleteChannelDialog } from "@/components/channel/delete-channel-dialog";
@@ -41,6 +43,8 @@ interface User {
     id: string;
     username: string;
     email: string;
+    status?: 'online' | 'away' | 'dnd' | 'offline';
+    custom_status?: string;
 }
 
 // Logic Hook extracted for reusability
@@ -54,6 +58,13 @@ function useSidebarLogic(currentWorkspaceId: string) {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const ws = useRef<WebSocket | null>(null);
+
+    // Auto-update presence based on network status
+    useOnlineStatus({
+        userId: currentUser?.id,
+        autoUpdateStatus: true,
+        previousStatus: currentUser?.status,
+    });
 
     const fetchData = async () => {
         try {
@@ -105,6 +116,33 @@ function useSidebarLogic(currentWorkspaceId: string) {
                     const payload = JSON.parse(event.data);
                     if (payload.type === 'notification') {
                         setNotifications(prev => [payload.data, ...prev]);
+                    } else if (payload.type === 'status_update') {
+                        // Update user status in real-time
+                        const { user_id, status, custom_status } = payload;
+                        
+                        // Update current user if it's them
+                        if (currentUser?.id === user_id) {
+                            setCurrentUser(prev => prev ? { ...prev, status, custom_status } : null);
+                        }
+                        
+                        // Update channel members (for DM presence indicators)
+                        setChannels(prev => prev.map(channel => {
+                            if (channel.members) {
+                                return {
+                                    ...channel,
+                                    members: channel.members.map((member: any) => {
+                                        if (member.user.id === user_id) {
+                                            return {
+                                                ...member,
+                                                user: { ...member.user, status, custom_status }
+                                            };
+                                        }
+                                        return member;
+                                    })
+                                };
+                            }
+                            return channel;
+                        }));
                     }
                 } catch (e) {
                     console.error("WS Parse Error", e);
@@ -114,6 +152,22 @@ function useSidebarLogic(currentWorkspaceId: string) {
             ws.current.onerror = (e: Event) => {
                 const wsEvent = e as any;
                 console.error("Notification WS Error - Code:", wsEvent.code || 'unknown', "Reason:", wsEvent.reason || 'No reason provided');
+            };
+
+            ws.current.onclose = (e) => {
+                console.log("Notification WS Closed - Code:", e.code, "Reason:", e.reason || 'No reason', "Clean:", e.wasClean);
+                // Attempt reconnect after 3 seconds
+                setTimeout(() => {
+                    if (ws.current?.readyState === WebSocket.CLOSED) {
+                        console.log("Attempting to reconnect notification WS...");
+                        try {
+                            const url = api.getWebSocketUrl("notifications");
+                            ws.current = new WebSocket(url);
+                        } catch (err) {
+                            console.error("Reconnect failed:", err);
+                        }
+                    }
+                }, 3000);
             };
 
         } catch (e) {
@@ -142,6 +196,22 @@ function useSidebarLogic(currentWorkspaceId: string) {
         api.logout();
     };
 
+    const handleStatusUpdate = async (status: string, customStatus?: string) => {
+        if (!currentUser) {
+            console.error("Cannot update status: no current user");
+            return;
+        }
+        console.log(`Updating status to: ${status}, custom: ${customStatus}`);
+        try {
+            const updatedUser = await api.updateUserStatus(currentUser.id, status, customStatus);
+            console.log("Status updated successfully:", updatedUser);
+            setCurrentUser(updatedUser);
+        } catch (error) {
+            console.error("Failed to update status:", error);
+            throw error;
+        }
+    };
+
     return {
         workspaces,
         currentWorkspace,
@@ -152,6 +222,7 @@ function useSidebarLogic(currentWorkspaceId: string) {
         handleWorkspaceChange,
         handleLogout,
         handleMarkRead,
+        handleStatusUpdate,
         fetchData
     };
 }
@@ -167,6 +238,7 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
         handleWorkspaceChange,
         handleLogout,
         handleMarkRead,
+        handleStatusUpdate,
         fetchData
     } = useSidebarLogic(currentWorkspaceId);
 
@@ -184,6 +256,7 @@ export function Sidebar({ currentWorkspaceId }: { currentWorkspaceId: string }) 
                 handleWorkspaceChange={handleWorkspaceChange}
                 handleLogout={handleLogout}
                 handleMarkRead={handleMarkRead}
+                handleStatusUpdate={handleStatusUpdate}
                 fetchData={fetchData}
             />
         </div>
@@ -244,6 +317,7 @@ export function SidebarContent({
     handleWorkspaceChange,
     handleLogout,
     handleMarkRead,
+    handleStatusUpdate,
     fetchData
 }: {
     currentWorkspaceId: string;
@@ -256,6 +330,7 @@ export function SidebarContent({
     handleWorkspaceChange: (id: string) => void;
     handleLogout: () => void;
     handleMarkRead: (id: string) => void;
+    handleStatusUpdate: (status: string, customStatus?: string) => Promise<void>;
     fetchData: () => Promise<void>;
 }) {
     const router = useRouter();
@@ -456,12 +531,19 @@ export function SidebarContent({
                                 const isActive = pathname?.includes(`/${channel.id}`);
                                 let displayName = channel.name;
                                 let statusColor = "bg-gray-400";
+                                const statusMap: Record<string, string> = {
+                                    online: "bg-green-500",
+                                    away: "bg-yellow-500",
+                                    dnd: "bg-red-500",
+                                    offline: "bg-gray-400",
+                                };
 
                                 if (channel.type === 'dm' && channel.members && currentUser) {
                                     const otherMember = channel.members.find((m: any) => m.user.id !== currentUser.id);
                                     if (otherMember) {
                                         displayName = otherMember.user.username;
-                                        statusColor = "bg-green-500";
+                                        const otherStatus = (otherMember.user as any)?.status ?? "offline";
+                                        statusColor = statusMap[otherStatus] || "bg-gray-400";
                                     } else {
                                         displayName = "Unknown User";
                                     }
@@ -502,7 +584,18 @@ export function SidebarContent({
                         <div className="flex-1 flex items-center p-2 rounded hover:bg-white/10 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0">
                             <div className="w-8 h-8 rounded bg-gray-600 dark:bg-gray-700 mr-2 flex items-center justify-center text-sm font-semibold text-white shrink-0 relative">
                                 {currentUser?.username?.charAt(0).toUpperCase() || "?"}
-                                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-[#3f0e40] dark:border-[#2b2d31] rounded-full" />
+                                {(() => {
+                                    const statusMap: Record<string, string> = {
+                                        online: "bg-green-500",
+                                        away: "bg-yellow-500",
+                                        dnd: "bg-red-500",
+                                        offline: "bg-gray-400",
+                                    };
+                                    const color = statusMap[currentUser?.status || "offline"] || "bg-gray-400";
+                                    return (
+                                        <div className={cn("absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#3f0e40] dark:border-[#2b2d31]", color)} />
+                                    );
+                                })()}
                             </div>
                             <div className="flex flex-col overflow-hidden min-w-0">
                                 <span className="text-sm font-semibold text-white truncate">
@@ -521,6 +614,15 @@ export function SidebarContent({
                             <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 mb-2">
                                 <p className="text-sm font-semibold">{currentUser?.username}</p>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{currentUser?.email}</p>
+                                {currentUser && (
+                                    <div className="mt-2">
+                                        <StatusSelector
+                                            currentStatus={currentUser.status || "online"}
+                                            customStatus={currentUser.custom_status}
+                                            onStatusChange={handleStatusUpdate}
+                                        />
+                                    </div>
+                                )}
                             </div>
 
                             <DropdownMenu.Item className="flex items-center px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 outline-none cursor-pointer">

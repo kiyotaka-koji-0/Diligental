@@ -285,4 +285,97 @@ async def get_reactions_for_message(
     reactions = await crud.get_message_reactions(db, message_id)
     return reactions
 
+@router.post("/{channel_id}/messages/{message_id}/pin", response_model=Message)
+async def pin_message(
+    channel_id: uuid.UUID,
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Pin a message to a channel. Channel owner or admins can pin messages."""
+    # Verify channel access
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Check if user is channel owner or workspace admin
+    if db_channel.owner_id != current_user.id and member.role != "admin":
+        raise HTTPException(status_code=403, detail="Only channel owner or admin can pin messages")
+    
+    # Get message
+    db_message = await crud.get_message_with_user(db, message_id=message_id)
+    if not db_message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    # Verify message is in this channel
+    if db_message.channel_id != channel_id:
+        raise HTTPException(status_code=400, detail="Message not in this channel")
+    
+    # Pin message
+    db_message.is_pinned = True
+    db.add(db_message)
+    await db.commit()
+    await db.refresh(db_message)
+    return db_message
+
+@router.delete("/{channel_id}/messages/{message_id}/pin", response_model=Message)
+async def unpin_message(
+    channel_id: uuid.UUID,
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Unpin a message from a channel. Channel owner or admins can unpin messages."""
+    # Verify channel access
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Check if user is channel owner or workspace admin
+    if db_channel.owner_id != current_user.id and member.role != "admin":
+        raise HTTPException(status_code=403, detail="Only channel owner or admin can unpin messages")
+    
+    # Get message
+    db_message = await crud.get_message_with_user(db, message_id=message_id)
+    if not db_message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    # Verify message is in this channel
+    if db_message.channel_id != channel_id:
+        raise HTTPException(status_code=400, detail="Message not in this channel")
+    
+    # Unpin message
+    db_message.is_pinned = False
+    db.add(db_message)
+    await db.commit()
+    await db.refresh(db_message)
+    return db_message
+
+@router.get("/{channel_id}/pinned", response_model=List[Message])
+async def get_pinned_messages(
+    channel_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all pinned messages in a channel."""
+    # Verify channel access
+    db_channel = await crud.get_channel(db, channel_id=channel_id)
+    if not db_channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    member = await crud.get_workspace_member(db, db_channel.workspace_id, current_user.id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+    
+    # Get pinned messages
+    pinned = await crud.get_pinned_messages(db, channel_id=channel_id)
+    return pinned
 

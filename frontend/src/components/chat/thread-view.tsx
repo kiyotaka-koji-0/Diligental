@@ -80,7 +80,7 @@ export function ThreadView({
                                         {formatTime(parentMessage.created_at)}
                                     </span>
                                 </div>
-                                <p className="text-gray-700 dark:text-white text-sm mt-0.5 leading-relaxed break-words">
+                                <p className="text-gray-700 dark:text-white text-sm mt-0.5 leading-relaxed wrap-break-word">
                                     {parentMessage.content}
                                 </p>
                             </div>
@@ -127,7 +127,7 @@ export function ThreadView({
             <div className="p-4 border-t border-white/10 glass-light flex-none relative">
                 {/* Thread Typing Indicator */}
                 {typingUsers.length > 0 && (
-                    <div className="absolute top-[-20px] left-4 flex items-center gap-2 animate-in fade-in">
+                    <div className="absolute -top-5 left-4 flex items-center gap-2 animate-in fade-in">
                         <div className="flex gap-1 bg-black/60 px-1.5 py-1 rounded-full border border-white/10">
                             <span className="w-1 h-1 bg-red-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                             <span className="w-1 h-1 bg-red-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>

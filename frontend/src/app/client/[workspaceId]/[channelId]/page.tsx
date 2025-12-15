@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, use, useCallback } from "react";
+import { useState, useEffect, useRef, use, useCallback, useContext } from "react";
 import { Message, Channel, User, Attachment } from "@/lib/api";
 import api from "@/lib/api";
-import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video, Bell, BellOff, Smile, Plus, Paperclip, X, FileIcon } from "lucide-react";
+import { Send, Hash, Users, Monitor, Bot, MessageCircle, Phone, Video, Bell, BellOff, Smile, Plus, Paperclip, X, FileIcon, Pin, PanelRight, PanelLeft } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,11 @@ import { VoiceChannel } from "@/components/chat/voice-channel";
 import { MobileSidebar } from "@/components/layout/sidebar";
 import { RichTextEditor } from "@/components/chat/rich-text-editor";
 import { RichTextRenderer } from "@/components/chat/rich-text-renderer";
+import { PinnedMessagesDialog } from "@/components/chat/pinned-messages";
 import { useWebRTC } from "@/hooks/use-webrtc";
+import { useMessageContextMenu } from "@/hooks/use-message-context-menu";
+import { ContextMenuContext } from "@/contexts/context-menu-context";
+import { useRouter } from "next/navigation";
 
 export default function ChannelPage({
     params,
@@ -22,6 +26,8 @@ export default function ChannelPage({
     params: Promise<{ workspaceId: string; channelId: string }>;
 }) {
     const { workspaceId, channelId } = use(params);
+    const router = useRouter();
+    const { showContextMenu } = useContext(ContextMenuContext) || {};
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
     const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -32,6 +38,8 @@ export default function ChannelPage({
     const [isConnected, setIsConnected] = useState(false);
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [showMemberDock, setShowMemberDock] = useState(true);
+    const [showMemberDrawer, setShowMemberDrawer] = useState(false);
 
     // Threading State
     const [activeThread, setActiveThread] = useState<Message | null>(null);
@@ -45,6 +53,10 @@ export default function ChannelPage({
 
     // Image Modal State
     const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
+
+    // Pinned Messages State
+    const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
+    const [showPinnedDialog, setShowPinnedDialog] = useState(false);
 
     // Aesthetics
     const messageFontSize = "text-lg"; // Increased from text-[15px]
@@ -183,7 +195,9 @@ export default function ChannelPage({
                     const members = ch.members.map((m: any) => ({
                         id: m.user?.id || m.user_id,
                         username: m.user?.username || "Unknown",
-                        email: m.user?.email || ""
+                        email: m.user?.email || "",
+                        status: m.user?.status,
+                        custom_status: m.user?.custom_status,
                     }));
                     setChannelMembers(members);
                 } else {
@@ -193,7 +207,9 @@ export default function ChannelPage({
                         const members = workspaceMembers.map((m: any) => ({
                             id: m.user?.id || m.user_id,
                             username: m.user?.username || "Unknown",
-                            email: m.user?.email || ""
+                            email: m.user?.email || "",
+                            status: m.user?.status,
+                            custom_status: m.user?.custom_status,
                         }));
                         setChannelMembers(members);
                     } catch (err) {
@@ -215,6 +231,10 @@ export default function ChannelPage({
                     new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 );
                 setMessages(sorted);
+
+                // Fetch pinned messages
+                const pinned = await api.getPinnedMessages(channelId);
+                setPinnedMessages(pinned);
             } catch (err) {
                 console.error("Error fetching data:", err);
             }
@@ -543,12 +563,85 @@ export default function ChannelPage({
         }
     };
 
+    const getStatusMeta = (status?: string) => {
+        const map: Record<string, { color: string; label: string }> = {
+            online: { color: "bg-green-500", label: "Online" },
+            away: { color: "bg-yellow-400", label: "Away" },
+            dnd: { color: "bg-red-500", label: "Do Not Disturb" },
+            offline: { color: "bg-gray-500", label: "Offline" },
+        };
+        return map[status || "offline"] || map.offline;
+    };
+
+    const handleOpenDM = async (targetUserId: string) => {
+        try {
+            const dm = await api.createDM(workspaceId, targetUserId);
+            router.push(`/client/${workspaceId}/${dm.id}`);
+        } catch (error) {
+            console.error("Failed to open DM:", error);
+        }
+    };
+
+    const handleMemberContextMenu = (e: React.MouseEvent, member: User) => {
+        if (!showContextMenu) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        showContextMenu(e.clientX, e.clientY, [
+            {
+                label: "Send Direct Message",
+                onClick: () => handleOpenDM(member.id),
+                disabled: member.id === currentUser?.id,
+            },
+            {
+                label: "Copy Email",
+                onClick: () => member.email && navigator.clipboard.writeText(member.email),
+                disabled: !member.email,
+            },
+            {
+                label: `Mention @${member.username}`,
+                onClick: () => setNewMessage(prev => `${prev} @${member.username} `),
+            },
+        ]);
+    };
+
     // Check if message is from current user
     const isSelf = (msg: Message) => {
         if (!currentUser) return false;
         if (msg.user_id === currentUser.id) return true;
         if (msg.sender && msg.sender.id === currentUser.id) return true;
         return false;
+    };
+
+    // Pin/Unpin handlers
+    const handlePinMessage = async (messageId: string) => {
+        try {
+            await api.pinMessage(channelId, messageId);
+            // Refetch pinned messages
+            const pinned = await api.getPinnedMessages(channelId);
+            setPinnedMessages(pinned);
+            // Update message in messages list
+            setMessages(prev => prev.map(msg => 
+                msg.id === messageId ? { ...msg, is_pinned: true } : msg
+            ));
+        } catch (error) {
+            console.error("Failed to pin message:", error);
+        }
+    };
+
+    const handleUnpinMessage = async (messageId: string) => {
+        try {
+            await api.unpinMessage(channelId, messageId);
+            // Refetch pinned messages
+            const pinned = await api.getPinnedMessages(channelId);
+            setPinnedMessages(pinned);
+            // Update message in messages list
+            setMessages(prev => prev.map(msg => 
+                msg.id === messageId ? { ...msg, is_pinned: false } : msg
+            ));
+        } catch (error) {
+            console.error("Failed to unpin message:", error);
+        }
     };
 
     const handleIncomingCall = () => {
@@ -578,7 +671,7 @@ export default function ChannelPage({
     }
 
     return (
-        <div className="absolute inset-0 flex flex-col glass-bg-3 overflow-hidden text-gray-900 dark:text-white">
+        <div className="absolute inset-0 flex flex-col overflow-hidden text-gray-900 dark:text-white bg-linear-to-br from-rose-50 via-white to-amber-50 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950">
 
             <CallOverlay
                 localStream={webrtcLocalStream}
@@ -625,6 +718,43 @@ export default function ChannelPage({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                        <Button
+                            onClick={() => setShowMemberDrawer(true)}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-gray-500 dark:text-gray-300 hover:bg-white/10 lg:hidden"
+                            title="Show members"
+                        >
+                            <Users className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            onClick={() => setShowMemberDock((v) => !v)}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-gray-500 dark:text-gray-300 hover:bg-white/10 hidden lg:inline-flex"
+                            title={showMemberDock ? "Hide member dock" : "Show member dock"}
+                        >
+                            {showMemberDock ? <PanelRight className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+                        </Button>
+                    </div>
+
+                    {/* Pinned Messages Button */}
+                    {pinnedMessages.length > 0 && (
+                        <Button
+                            onClick={() => setShowPinnedDialog(true)}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-yellow-400 hover:bg-yellow-500/10 relative"
+                            title={`${pinnedMessages.length} pinned message${pinnedMessages.length !== 1 ? 's' : ''}`}
+                        >
+                            <Pin className="h-4 w-4" />
+                            <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-yellow-500 text-[10px] flex items-center justify-center text-black font-bold">
+                                {pinnedMessages.length}
+                            </span>
+                        </Button>
+                    )}
+
                     {/* Unread Badge */}
                     {unreadCount > 0 && (
                         <div className="px-2.5 py-1 bg-red-500/20 border border-red-500/30 rounded-lg text-xs font-medium text-red-300 flex items-center gap-1">
@@ -677,7 +807,7 @@ export default function ChannelPage({
                 <div className="flex-1 flex flex-col min-w-0">
 
                     {/* Messages List */}
-                    <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar p-6 space-y-6">
+                    <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar p-6 space-y-6 bg-white/60 dark:bg-white/5 backdrop-blur-xl rounded-2xl m-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.45)] border border-white/40 dark:border-white/10">
 
                         <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
                             <div className="h-16 w-16 rounded-2xl bg-linear-to-br from-zinc-800 to-black border border-white/10 flex items-center justify-center mb-4 shadow-2xl">
@@ -704,10 +834,21 @@ export default function ChannelPage({
                             const isMe = isSelf(msg);
                             const showAvatar = index === 0 || messages[index - 1].user_id !== msg.user_id;
 
+                            // eslint-disable-next-line react-hooks/rules-of-hooks
+                            const { handleContextMenu } = useMessageContextMenu({
+                                message: msg,
+                                currentUser,
+                                channelId,
+                                onPin: () => handlePinMessage(msg.id),
+                                onUnpin: () => handleUnpinMessage(msg.id),
+                                onReply: () => setActiveThread(msg),
+                            });
+
                             return (
                                 <div
                                     key={msg.id || index}
                                     className={`flex gap-4 ${isMe ? "flex-row-reverse" : "flex-row"} group`}
+                                    onContextMenu={handleContextMenu}
                                 >
                                     <div className={`flex-none w-10 ${!showAvatar && "invisible"}`}>
                                         <div className={`h-10 w-10 rounded-xl flex items-center justify-center text-sm font-medium shadow-lg border border-white/10 dark:border-white/5 ${isMe
@@ -730,14 +871,14 @@ export default function ChannelPage({
                                             </div>
                                         )}
 
-                                        <div className={`relative px-4 py-3 rounded-2xl ${messageFontSize} leading-relaxed glass-shadow transition-all ${isMe
-                                            ? "glass-medium bg-red-500/20! border-red-500/30! text-gray-900 dark:text-white rounded-tr-sm"
-                                            : "glass-light text-gray-900 dark:text-white rounded-tl-sm hover:bg-white/10 dark:hover:bg-white/5"
+                                        <div className={`relative px-4 py-3 rounded-2xl ${messageFontSize} leading-relaxed shadow-md transition-all border ${isMe
+                                            ? "bg-linear-to-br from-rose-200/80 via-rose-100/70 to-amber-100/60 dark:from-rose-900/60 dark:via-rose-800/50 dark:to-amber-800/40 border-rose-200/60 dark:border-rose-800/50 text-gray-900 dark:text-white rounded-tr-sm"
+                                            : "bg-white/80 dark:bg-white/5 border-white/50 dark:border-white/10 text-gray-900 dark:text-white rounded-tl-sm hover:shadow-lg hover:-translate-y-0.5"
                                             }`}>
                                             <RichTextRenderer 
                                                 content={msg.content}
                                                 mentions={msg.mentioned_users || []}
-                                                className="break-words"
+                                                className="wrap-break-word"
                                             />
 
                                             {/* Attachments */}
@@ -815,7 +956,7 @@ export default function ChannelPage({
                                             {/* Reaction Picker Trigger */}
                                             <DropdownMenu.Root>
                                                 <DropdownMenu.Trigger asChild>
-                                                    <button className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 dark:hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100">
+                                                    <button className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 dark:hover:bg-white/10 transition-all duration-150 opacity-0 group-hover:opacity-100 group-hover:-translate-y-0.5">
                                                         <Smile className="w-3 h-3" />
                                                     </button>
                                                 </DropdownMenu.Trigger>
@@ -836,7 +977,7 @@ export default function ChannelPage({
 
                                             <button
                                                 onClick={() => setActiveThread(msg)}
-                                                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 dark:hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100"
+                                                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 dark:hover:bg-white/10 transition-all duration-150 opacity-0 group-hover:opacity-100 group-hover:-translate-y-0.5"
                                             >
                                                 <MessageCircle className="w-3 h-3" />
                                                 Reply
@@ -955,6 +1096,147 @@ export default function ChannelPage({
                     </div>
                 </div>
 
+                {/* Mobile Member Drawer */}
+                {showMemberDrawer && (
+                    <div className="fixed inset-0 z-40 lg:hidden">
+                        <div
+                            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                            onClick={() => setShowMemberDrawer(false)}
+                        />
+                        <div className="absolute inset-y-0 right-0 w-80 max-w-[85vw] bg-white dark:bg-[#111318] shadow-2xl border-l border-white/20 dark:border-white/10 animate-fade-scale-in origin-right flex flex-col">
+                            <div className="px-4 py-3 border-b border-white/10 dark:border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Members</span>
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">
+                                        {channelMembers.length}
+                                    </span>
+                                </div>
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => setShowMemberDrawer(false)}
+                                    className="h-8 w-8"
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                                {channelMembers.map(member => {
+                                    const meta = getStatusMeta(member.status);
+                                    const isSelfMember = member.id === currentUser?.id;
+                                    return (
+                                        <div
+                                            key={member.id}
+                                            onClick={() => handleOpenDM(member.id)}
+                                            onContextMenu={(e) => handleMemberContextMenu(e, member)}
+                                            className="p-3 rounded-lg hover:bg-white/60 dark:hover:bg-white/10 transition-all duration-150 border border-transparent hover:border-white/20 cursor-pointer"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="relative h-10 w-10 rounded-full bg-linear-to-br from-zinc-800 to-zinc-950 text-white flex items-center justify-center text-sm font-semibold">
+                                                    {member.username?.[0]?.toUpperCase() || "U"}
+                                                    <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border border-black/40 dark:border-white/20 ${meta.color}`}></span>
+                                                </div>
+                                                <div className="flex flex-col min-w-0">
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{member.username}</span>
+                                                        {isSelfMember && <span className="text-[10px] text-gray-500 dark:text-gray-400">(you)</span>}
+                                                    </div>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{meta.label}{member.custom_status ? ` • ${member.custom_status}` : ""}</span>
+                                                    {member.email && (
+                                                        <span className="text-[11px] text-gray-500 dark:text-gray-500 truncate">{member.email}</span>
+                                                    )}
+                                                </div>
+                                                <div className="ml-auto">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        disabled={isSelfMember}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenDM(member.id);
+                                                        }}
+                                                        className="h-8 px-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-white/10"
+                                                    >
+                                                        DM
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Member Dock */}
+                {showMemberDock && (
+                <aside className="hidden lg:flex w-72 flex-col border-l border-white/20 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur-xl shadow-inner">
+                    <div className="px-4 py-3 border-b border-white/10 dark:border-white/5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Members</span>
+                        </div>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">
+                            {channelMembers.length}
+                        </span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                        {channelMembers.map(member => {
+                            const meta = getStatusMeta(member.status);
+                            const isSelfMember = member.id === currentUser?.id;
+                            return (
+                                <div
+                                    key={member.id}
+                                    onContextMenu={(e) => handleMemberContextMenu(e, member)}
+                                    className="p-3 rounded-lg hover:bg-white/50 dark:hover:bg-white/10 transition-all duration-150 border border-transparent hover:border-white/20 cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative h-10 w-10 rounded-full bg-linear-to-br from-zinc-800 to-zinc-950 text-white flex items-center justify-center text-sm font-semibold">
+                                            {member.username?.[0]?.toUpperCase() || "U"}
+                                            <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border border-black/40 dark:border-white/20 ${meta.color}`}></span>
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{member.username}</span>
+                                                {isSelfMember && <span className="text-[10px] text-gray-500 dark:text-gray-400">(you)</span>}
+                                            </div>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{meta.label}{member.custom_status ? ` • ${member.custom_status}` : ""}</span>
+                                            {member.email && (
+                                                <span className="text-[11px] text-gray-500 dark:text-gray-500 truncate">{member.email}</span>
+                                            )}
+                                        </div>
+                                        <div className="ml-auto">
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                disabled={isSelfMember}
+                                                onClick={() => handleOpenDM(member.id)}
+                                                className="h-8 px-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-white/10"
+                                            >
+                                                DM
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </aside>
+                )}
+
+                {!showMemberDock && (
+                    <button
+                        onClick={() => setShowMemberDock(true)}
+                        className="hidden lg:flex absolute right-2 top-24 z-30 px-3 py-2 rounded-full bg-white/80 dark:bg-white/10 border border-white/40 dark:border-white/10 shadow-md text-xs text-gray-700 dark:text-gray-200 hover:-translate-y-0.5 transition-all"
+                        title="Show members"
+                    >
+                        <Users className="h-3.5 w-3.5 mr-2" /> Show members
+                    </button>
+                )}
+
                 {/* Thread Sidebar (Conditional) */}
                 {activeThread && currentUser && (
                     <ThreadView
@@ -975,6 +1257,14 @@ export default function ChannelPage({
                     alt={selectedImage?.alt || ""}
                     isOpen={!!selectedImage}
                     onClose={() => setSelectedImage(null)}
+                />
+
+                {/* Pinned Messages Dialog */}
+                <PinnedMessagesDialog
+                    isOpen={showPinnedDialog}
+                    onClose={() => setShowPinnedDialog(false)}
+                    messages={pinnedMessages}
+                    onUnpin={handleUnpinMessage}
                 />
             </div>
         </div>

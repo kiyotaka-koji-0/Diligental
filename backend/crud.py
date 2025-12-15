@@ -462,3 +462,18 @@ async def get_message_reactions(db: AsyncSession, message_id: uuid.UUID):
         .order_by(Reaction.created_at.asc())
     )
     return result.scalars().all()
+
+async def get_pinned_messages(db: AsyncSession, channel_id: uuid.UUID):
+    """Get all pinned messages in a channel"""
+    result = await db.execute(
+        select(Message)
+        .options(
+            joinedload(Message.user),
+            joinedload(Message.reactions).joinedload(models.Reaction.user),
+            joinedload(Message.attachments),
+            joinedload(Message.mentioned_users)
+        )
+        .filter(Message.channel_id == channel_id, Message.is_pinned == True)
+        .order_by(Message.created_at.desc())
+    )
+    return result.unique().scalars().all()

@@ -25,6 +25,8 @@ class User(Base):
     full_name = Column(String, nullable=True)
     role = Column(String, default="user") # 'admin' or 'user'
     tailnet_ip = Column(String, nullable=True)
+    status = Column(String, default="online") # 'online', 'away', 'dnd', 'offline'
+    custom_status = Column(String, nullable=True) # e.g., 'In a meeting', 'Lunch break'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     messages = relationship("Message", back_populates="user")
@@ -92,6 +94,7 @@ class Message(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_pinned = Column(Boolean, default=False) # Whether message is pinned to channel
     
     channel_id = Column(UUID(as_uuid=True), ForeignKey("channels.id"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
